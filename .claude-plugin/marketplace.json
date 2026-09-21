@@ -1,17 +1,17 @@
 {
-  "name": "papertrail",
+  "name": "aict",
   "description": "A plan-based bridge between graduate students and their instructor for quantitative-methods coursework.",
   "owner": {
-    "name": "PaperTrail contributors",
+    "name": "AICT contributors",
     "url": "https://github.com/snnlab/papertrail_v0"
   },
   "plugins": [
     {
-      "name": "papertrail",
+      "name": "aict",
       "source": "./",
       "description": "A versioned analysis plan per component, a sign-off gate before the AI executes analysis, an append-only decision log, checksum-verified results bundles, and a browser board for instructor review and annotation.",
       "author": {
-        "name": "PaperTrail contributors"
+        "name": "AICT contributors"
       }
     }
   ]

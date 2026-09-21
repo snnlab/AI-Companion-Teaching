@@ -7,17 +7,17 @@
 :root {
   font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica,
     Arial, sans-serif;
-  --pt-prose-heading: var(--color-stone-900);
-  --pt-prose-body: var(--color-stone-800);
-  --pt-prose-muted: var(--color-stone-500);
+  --aict-prose-heading: var(--color-stone-900);
+  --aict-prose-body: var(--color-stone-800);
+  --aict-prose-muted: var(--color-stone-500);
 }
 
 html.dark {
   background: var(--color-stone-950);
   color-scheme: dark;
-  --pt-prose-heading: var(--color-stone-100);
-  --pt-prose-body: var(--color-stone-200);
-  --pt-prose-muted: var(--color-stone-400);
+  --aict-prose-heading: var(--color-stone-100);
+  --aict-prose-body: var(--color-stone-200);
+  --aict-prose-muted: var(--color-stone-400);
 }
 
 code,
@@ -31,14 +31,14 @@ pre {
    against plannotator's reading surface. */
 .prose-md {
   line-height: 1.65;
-  color: var(--pt-prose-body);
+  color: var(--aict-prose-body);
 }
 .prose-md h1 {
   font-size: 1.5rem;
   font-weight: 700;
   letter-spacing: -0.01em;
   margin: 1.5rem 0 0.75rem;
-  color: var(--pt-prose-heading);
+  color: var(--aict-prose-heading);
 }
 .prose-md h2 {
   font-size: 1.25rem;
@@ -46,13 +46,13 @@ pre {
   margin: 2rem 0 0.6rem;
   padding-bottom: 0.2rem;
   border-bottom: 1px solid var(--color-stone-200);
-  color: var(--pt-prose-heading);
+  color: var(--aict-prose-heading);
 }
 .prose-md h3 {
   font-size: 1.05rem;
   font-weight: 600;
   margin: 1.5rem 0 0.4rem;
-  color: var(--pt-prose-heading);
+  color: var(--aict-prose-heading);
 }
 .prose-md h4,
 .prose-md h5,
@@ -60,7 +60,7 @@ pre {
   font-size: 1em;
   font-weight: 600;
   margin: 1.25rem 0 0.3rem;
-  color: var(--pt-prose-heading);
+  color: var(--aict-prose-heading);
 }
 .prose-md h1,
 .prose-md h2,
@@ -98,7 +98,7 @@ pre {
 .prose-md blockquote {
   border-left: 3px solid var(--color-stone-300);
   padding-left: 0.75rem;
-  color: var(--pt-prose-muted);
+  color: var(--aict-prose-muted);
   font-style: italic;
   margin: 0.75rem 0;
 }

@@ -20,7 +20,7 @@ describe("ConnBanner", () => {
       />,
     );
     expect(screen.getByText(/Sent to Claude/)).toBeTruthy();
-    expect(screen.getByText(/papertrail:board to reopen/)).toBeTruthy();
+    expect(screen.getByText(/aict:board to reopen/)).toBeTruthy();
   });
 
   it("stalled keeps waiting and names the recovery command", () => {
@@ -30,7 +30,7 @@ describe("ConnBanner", () => {
       />,
     );
     expect(screen.getByText(/Sent to Claude/)).toBeTruthy();
-    expect(screen.getByText(/papertrail:board/)).toBeTruthy();
+    expect(screen.getByText(/aict:board/)).toBeTruthy();
   });
 
   it("sleeping names the wake command and reassures about drafts", () => {
@@ -42,6 +42,6 @@ describe("ConnBanner", () => {
   it("shows sign-session recovery copy when that one-shot server has ended", () => {
     render(<ConnBanner phase={{ kind: "sleeping", lastBootId: null }} signSessionEnded />);
     expect(screen.getByText(/your draft is saved/i)).toBeTruthy();
-    expect(screen.getByText(/papertrail:sign/)).toBeTruthy();
+    expect(screen.getByText(/aict:sign/)).toBeTruthy();
   });
 });

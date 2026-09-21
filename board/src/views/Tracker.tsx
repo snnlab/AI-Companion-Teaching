@@ -202,7 +202,7 @@ export default function Tracker({
   }
   if (!hasRQs) {
     drift.push({
-      text: "Master plan has no Research questions (pre-v0.3) — run /papertrail:init update mode",
+      text: "Master plan has no Research questions (pre-v0.3) — run /aict:init update mode",
     });
   }
   for (const r of mp.components) {
@@ -222,7 +222,7 @@ export default function Tracker({
       !slug
     ) {
       drift.push({
-        text: `${r.component} is ${r.status} but carries no execution plan — run /papertrail:adopt`,
+        text: `${r.component} is ${r.status} but carries no execution plan — run /aict:adopt`,
       });
     }
     const g = slug
@@ -282,7 +282,7 @@ export default function Tracker({
   // inactivity computed here from git.fileDates.
   if (data.drift?.staleBoardHtml) {
     drift.push({
-      text: "Exported board.html is older than newer files under plans/ — regenerate with /papertrail:board --export",
+      text: "Exported board.html is older than newer files under plans/ — regenerate with /aict:board --export",
     });
   }
   for (const slug of data.drift?.leftoverStaging ?? []) {

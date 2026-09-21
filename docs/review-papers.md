@@ -1,10 +1,10 @@
 # Review papers (systematic / PRISMA-style)
 
-PaperTrail was built around a quantitative-methods worked example (see [QUICKSTART.md](../QUICKSTART.md)), but the workflow itself — plan a component, get it scored, sign it, execute it, capture a verified results bundle, report — governs *any* structured research process, not just statistical modeling. A systematic literature review has its own real methodology (a search strategy, screening with inclusion/exclusion criteria, extraction, appraisal, synthesis), and every mechanical part of PaperTrail already supports it without any code change: the execution-plan template, the results-bundle schema, and the five-channel rubric are all written in method-agnostic language. This page shows exactly how the pieces map, so you don't have to guess.
+AICT was built around a quantitative-methods worked example (see [QUICKSTART.md](../QUICKSTART.md)), but the workflow itself — plan a component, get it scored, sign it, execute it, capture a verified results bundle, report — governs *any* structured research process, not just statistical modeling. A systematic literature review has its own real methodology (a search strategy, screening with inclusion/exclusion criteria, extraction, appraisal, synthesis), and every mechanical part of AICT already supports it without any code change: the execution-plan template, the results-bundle schema, and the five-channel rubric are all written in method-agnostic language. This page shows exactly how the pieces map, so you don't have to guess.
 
 ## Getting started
 
-Run `/papertrail:init` as usual. The very first question it asks is the paper type:
+Run `/aict:init` as usual. The very first question it asks is the paper type:
 
 > **Is this paper a quantitative analysis, or a literature review?**
 
@@ -24,7 +24,7 @@ For a review, components are the review's own methodological stages. Propose onl
 
 ## A worked example: the screening component
 
-`/papertrail:plan` walks through the same dimension-by-dimension dialogue as any other component. For screening, the consequential decisions look like this:
+`/aict:plan` walks through the same dimension-by-dimension dialogue as any other component. For screening, the consequential decisions look like this:
 
 | Dimension | Decision | Why |
 |---|---|---|
@@ -63,7 +63,7 @@ Real judgment calls get logged the moment they happen, exactly like the CLPM-vs-
 
 ## Results bundle
 
-`/papertrail:results` captures a review component's outputs the same way it captures a regression table — the only difference is `producedBy`. When an artifact came from a script (e.g. a Python script that queried an API and logged results), `producedBy` names it as usual. When an artifact was produced by hand — screening decisions made by the student reading abstracts, an extraction table filled in from reading full texts — `producedBy: null` is the *correct*, fully valid value, not a workaround: `commands/results.md` says explicitly, *"Never guess a producing script — record `producedBy: null` if unknown."*
+`/aict:results` captures a review component's outputs the same way it captures a regression table — the only difference is `producedBy`. When an artifact came from a script (e.g. a Python script that queried an API and logged results), `producedBy` names it as usual. When an artifact was produced by hand — screening decisions made by the student reading abstracts, an extraction table filled in from reading full texts — `producedBy: null` is the *correct*, fully valid value, not a workaround: `commands/results.md` says explicitly, *"Never guess a producing script — record `producedBy: null` if unknown."*
 
 A typical screening/extraction bundle:
 
@@ -71,7 +71,7 @@ A typical screening/extraction bundle:
 - **`artifacts/extraction-table.csv`** — `kind: "other"` (`commands/results.md`: *"A standalone CSV or spreadsheet captured without a render is `kind: 'other'`"*), `producedBy: null`.
 - A **metric/finding** with no numbers at all beyond a count is still fully valid: `{"label": "Studies meeting inclusion criteria", "value": "14 of 212", "statement": "14 of 212 screened studies met inclusion criteria after full-text review.", "status": "robust"}` — `results.py`'s substantive-finding check has no numeric-type requirement anywhere in it.
 
-`/papertrail:report`'s narrative synthesis section is just prose under a heading — it doesn't have to be a table or figure at all.
+`/aict:report`'s narrative synthesis section is just prose under a heading — it doesn't have to be a table or figure at all.
 
 ## The rubric scores a review plan on equal footing
 
@@ -79,4 +79,4 @@ A typical screening/extraction bundle:
 
 ## Everything else is unchanged
 
-Signing (`/papertrail:sign`), the execution loop (`/papertrail:execute`), sync (`/papertrail:sync`), the board (`/papertrail:board`), and submitting to an instructor's roster (`/papertrail:submit`) work identically for both paper types — none of them branch on `paperType` at all. Read [QUICKSTART.md](../QUICKSTART.md) for those steps; only the examples in it are quant-flavored, not the mechanics.
+Signing (`/aict:sign`), the execution loop (`/aict:execute`), sync (`/aict:sync`), the board (`/aict:board`), and submitting to an instructor's roster (`/aict:submit`) work identically for both paper types — none of them branch on `paperType` at all. Read [QUICKSTART.md](../QUICKSTART.md) for those steps; only the examples in it are quant-flavored, not the mechanics.

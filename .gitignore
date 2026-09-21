@@ -3,10 +3,10 @@
 logs/
 board/node_modules
 board/dist/
-skills/managing-papertrail/assets/web-template/node_modules
-skills/managing-papertrail/assets/web-template/.vercel
-skills/managing-papertrail/assets/classroom-template/node_modules
-skills/managing-papertrail/assets/classroom-template/.vercel
+skills/managing-aict/assets/web-template/node_modules
+skills/managing-aict/assets/web-template/.vercel
+skills/managing-aict/assets/classroom-template/node_modules
+skills/managing-aict/assets/classroom-template/.vercel
 plans-admin/
 .superpowers/
 __pycache__/

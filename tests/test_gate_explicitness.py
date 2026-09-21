@@ -17,7 +17,7 @@ from unittest import mock
 
 SCRIPTS = (
     Path(__file__).resolve().parents[1]
-    / "skills" / "managing-papertrail" / "scripts"
+    / "skills" / "managing-aict" / "scripts"
 )
 sys.path.insert(0, str(SCRIPTS))
 import board  # noqa: E402
@@ -179,7 +179,7 @@ class TestTimeoutPersistsDraft(unittest.TestCase):
             self.assertTrue(draft.exists())
             self.assertEqual(draft.read_text(encoding="utf-8"), DRAFT)
             self.assertIn(".draft-v1.md", reason)
-            self.assertIn("/papertrail:sign", reason)
+            self.assertIn("/aict:sign", reason)
             self.assertNotIn("NO_GATE", reason)
 
     def test_timeout_overwrites_stale_draft(self):
@@ -198,12 +198,12 @@ class TestTicketErrorMessages(unittest.TestCase):
         with tempfile.TemporaryDirectory() as tmp:
             root = Path(tmp)
             comp = make_init_component(root)
-            tp = root / "plans" / "execution" / ".papertrail-approved-03-x-v1"
+            tp = root / "plans" / "execution" / ".aict-approved-03-x-v1"
             tp.write_text("not json", encoding="utf-8")
             decision, reason = run_gate_reason(root, comp / "v1.md", SIGNED)
             self.assertEqual(decision, "deny")
             self.assertIn("unreadable or corrupt", reason)
-            self.assertIn("/papertrail:sign", reason)
+            self.assertIn("/aict:sign", reason)
             self.assertNotIn("--gate-batch", reason)
 
     def test_expired_ticket_names_sign_command(self):
@@ -214,7 +214,7 @@ class TestTicketErrorMessages(unittest.TestCase):
             decision, reason = run_gate_reason(root, comp / "v1.md", SIGNED)
             self.assertEqual(decision, "deny")
             self.assertIn("expired", reason)
-            self.assertIn("/papertrail:sign", reason)
+            self.assertIn("/aict:sign", reason)
             self.assertNotIn("--gate-batch", reason)
 
     def test_hash_mismatch_names_sign_command(self):
@@ -226,7 +226,7 @@ class TestTicketErrorMessages(unittest.TestCase):
             decision, reason = run_gate_reason(root, comp / "v1.md", tampered)
             self.assertEqual(decision, "deny")
             self.assertIn("content-hash mismatch", reason)
-            self.assertIn("/papertrail:sign", reason)
+            self.assertIn("/aict:sign", reason)
             self.assertNotIn("--gate-batch", reason)
 
     def test_order_bound_orphan_fast_denies_in_actual_hook(self):

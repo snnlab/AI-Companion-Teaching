@@ -11,7 +11,7 @@ from pathlib import Path
 
 SCRIPTS = (
     Path(__file__).resolve().parents[1]
-    / "skills" / "managing-papertrail" / "scripts"
+    / "skills" / "managing-aict" / "scripts"
 )
 RESULTS = SCRIPTS / "results.py"
 sys.path.insert(0, str(SCRIPTS))
@@ -24,7 +24,7 @@ def make_project(root: Path):
     plans = root / "plans"
     (plans / "execution" / "02-analysis").mkdir(parents=True)
     (plans / "master-plan.md").write_text(
-        "<!-- papertrail:master-plan -->\n# T — Master Plan\n\n"
+        "<!-- aict:master-plan -->\n# T — Master Plan\n\n"
         "## Components\n\n"
         "| # | Component | Status | Execution plan | Outcome / notes | Serves |\n"
         "|---|-----------|--------|----------------|-----------------|--------|\n"
@@ -901,7 +901,7 @@ class TestResultsCommandDocs(unittest.TestCase):
     def test_adopt_reconcile_and_regeneration_route_to_reference(self):
         repo = Path(__file__).resolve().parents[1]
         command = (repo / "commands" / "results.md").read_text(encoding="utf-8")
-        reference = (repo / "skills" / "managing-papertrail" / "references" /
+        reference = (repo / "skills" / "managing-aict" / "references" /
                      "results-adopt.md").read_text(encoding="utf-8")
 
         self.assertIn("references/results-adopt.md", command)

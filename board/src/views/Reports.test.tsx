@@ -6,8 +6,8 @@ import type { BoardData, ResultsBundle } from "../lib/types";
 
 afterEach(cleanup);
 
-const MARKER = '<!-- pt-report {"schemaVersion": 1, "component": "01-x", "bundle": 1, "plan": 1, "verdict": "pending", "generated": "2026-07-10T14:30"} -->';
-const V2_MARKER = '<!-- pt-report {"schemaVersion": 2, "component": "01-x", "bundle": 1, "plan": 1, "validation": "conforms", "generated": "2026-07-17T10:00"} -->';
+const MARKER = '<!-- aict-report {"schemaVersion": 1, "component": "01-x", "bundle": 1, "plan": 1, "verdict": "pending", "generated": "2026-07-10T14:30"} -->';
+const V2_MARKER = '<!-- aict-report {"schemaVersion": 2, "component": "01-x", "bundle": 1, "plan": 1, "validation": "conforms", "generated": "2026-07-17T10:00"} -->';
 
 function bundle(over: Partial<ResultsBundle>): ResultsBundle {
   return {
@@ -61,7 +61,7 @@ describe("Reports view", () => {
   it("renders the report body with the marker stripped and figures resolved", () => {
     const { container } = draw(data([bundle({})]));
     expect(screen.getByText("Report")).toBeTruthy();
-    expect(container.textContent).not.toContain("pt-report");
+    expect(container.textContent).not.toContain("aict-report");
     expect(container.querySelector("img")?.getAttribute("src")).toBe("data:image/png;base64,AAAA");
   });
   it("labels the bundle picker rN · plan vN", () => {
@@ -106,7 +106,7 @@ describe("Reports view", () => {
     expect(screen.getByText(/before verdict tracking/i)).toBeTruthy();
   });
   it("malformed marker: body still renders with a soft flag", () => {
-    const b = bundle({ publishedReport: { path: "plans/reports/01-x-r1-report.md", content: '<!-- pt-report {"broken":\n# Body\n' } });
+    const b = bundle({ publishedReport: { path: "plans/reports/01-x-r1-report.md", content: '<!-- aict-report {"broken":\n# Body\n' } });
     draw(data([b]));
     expect(screen.getByText("Body")).toBeTruthy();
     expect(screen.getByText(/marker unreadable/i)).toBeTruthy();

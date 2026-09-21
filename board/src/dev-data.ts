@@ -5,7 +5,7 @@ import type { BoardData } from "./lib/types";
 
 const MARKER = "PB_BOARD_DEV_DATA";
 
-const masterPlan = `<!-- papertrail:master-plan -->
+const masterPlan = `<!-- aict:master-plan -->
 # Immigration Attitudes (ISSP) — Master Plan
 
 Last updated: 2026-07-02
@@ -39,7 +39,7 @@ Statuses: \`not started\` / \`planned\` / \`in progress\` / \`done\` / \`dropped
 Renewed 2026-07-02 from archive/master-plan-2026-07-02.md. Carried: data acquisition, data cleaning. Not carried: 09-attrition-pilot (superseded by the new direction) — its plans and results remain browsable.
 `;
 
-const archivedMasterPlan = `<!-- papertrail:master-plan -->
+const archivedMasterPlan = `<!-- aict:master-plan -->
 # Immigration Attitudes (panel attrition) — Master Plan
 
 Last updated: 2026-07-01
@@ -882,7 +882,7 @@ const descriptivesResults = [
   },
 ];
 
-const history = `<!-- papertrail:history -->
+const history = `<!-- aict:history -->
 # Reconstructed History (pre-adoption)
 
 Reconstructed at adoption on 2026-07-02; covers 2026-05 – 2026-07-02 12:00.
@@ -911,7 +911,7 @@ export const devData: BoardData = {
     baselineHash: "dev0000000000000000000000000000000000000000000000000000000000dev",
     raw: "",
     proseBefore:
-      "How each papertrail stage picks a Claude model. **nudge**: Claude tells you the profile's model and suggests `/model`; you decide. **agent**: the delegated stage runs on the profile's model automatically.",
+      "How each aict stage picks a Claude model. **nudge**: Claude tells you the profile's model and suggests `/model`; you decide. **agent**: the delegated stage runs on the profile's model automatically.",
     proseAfter:
       "Planning gets the strongest model at max effort; execution a fast cheap one; review and validation a smarter prior at low effort.",
     rows: [

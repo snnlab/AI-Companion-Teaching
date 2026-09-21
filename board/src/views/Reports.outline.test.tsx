@@ -7,7 +7,7 @@ import type { OutlineEntry } from "../lib/outline";
 
 afterEach(cleanup);
 
-const MARKER = '<!-- pt-report {"schemaVersion": 1, "component": "01-x", "bundle": 1, "plan": 1, "verdict": "pending", "generated": "2026-07-10T14:30"} -->';
+const MARKER = '<!-- aict-report {"schemaVersion": 1, "component": "01-x", "bundle": 1, "plan": 1, "verdict": "pending", "generated": "2026-07-10T14:30"} -->';
 
 function bundle(over: Partial<ResultsBundle>): ResultsBundle {
   return {

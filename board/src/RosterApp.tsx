@@ -6,7 +6,7 @@ import type { RosterFetchState } from "./lib/rosterTypes";
 /** Top-level bootstrap for the instructor-hosted classroom dashboard (Phase
  * 2) — the "many students" counterpart to App.tsx's single-project board.
  * Mounted by main.tsx instead of App when the page's root element carries
- * `data-papertrail-mode="roster"` (see main.tsx for the exact detection
+ * `data-aict-mode="roster"` (see main.tsx for the exact detection
  * contract and why).
  *
  * This component's whole job is the roster's own async lifecycle: fetch
@@ -98,7 +98,7 @@ export default function RosterApp() {
               {state.data.course.name ?? state.data.course.id}
             </div>
             <div className="text-[11px] text-stone-400 dark:text-stone-500">
-              papertrail roster · generated {state.data.generatedAt.slice(0, 16)}
+              aict roster · generated {state.data.generatedAt.slice(0, 16)}
             </div>
           </div>
           <div className="flex items-center gap-2">

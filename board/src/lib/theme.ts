@@ -5,7 +5,7 @@
 // preference simply applies.
 export type Theme = "light" | "dark";
 
-export const THEME_KEY = "pt-board:theme";
+export const THEME_KEY = "aict-board:theme";
 
 export function resolveTheme(stored: string | null, systemDark: boolean): Theme {
   if (stored === "dark" || stored === "light") return stored;

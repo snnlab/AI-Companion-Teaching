@@ -1,5 +1,5 @@
-// Contract parsers for the papertrail artifact formats.
-// The formats are defined by skills/managing-papertrail/templates/*.md;
+// Contract parsers for the aict artifact formats.
+// The formats are defined by skills/managing-aict/templates/*.md;
 // parse.test.ts uses those templates (and real generated artifacts) as fixtures,
 // so a template change that breaks parsing fails the test suite.
 

@@ -12,7 +12,7 @@ from pathlib import Path
 
 SCRIPTS = (
     Path(__file__).resolve().parents[1]
-    / "skills" / "managing-papertrail" / "scripts"
+    / "skills" / "managing-aict" / "scripts"
 )
 sys.path.insert(0, str(SCRIPTS))
 import models  # noqa: E402
@@ -24,7 +24,7 @@ DEFAULT_PROFILE = (TEMPLATES / "model-profile.md").read_text(encoding="utf-8")
 def make_project(tmp, profile=DEFAULT_PROFILE):
     root = Path(tmp)
     (root / "plans").mkdir(parents=True, exist_ok=True)
-    (root / "plans" / "master-plan.md").write_text("<!-- papertrail:master-plan -->\n")
+    (root / "plans" / "master-plan.md").write_text("<!-- aict:master-plan -->\n")
     if profile is not None:
         (root / "plans" / "model-profile.md").write_text(profile, encoding="utf-8")
     return root
@@ -195,7 +195,7 @@ class TestGenerate(unittest.TestCase):
             code, out, err = self._generate(root)
             self.assertEqual(code, 0)
             sha = hashlib.sha256((root / "plans" / "model-profile.md").read_bytes()).hexdigest()
-            for name in ("pt-plan-reviewer", "pt-results-validator", "pt-board-reviewer"):
+            for name in ("aict-plan-reviewer", "aict-results-validator", "aict-board-reviewer"):
                 path = root / ".claude" / "agents" / f"{name}.md"
                 self.assertTrue(path.exists(), name)
                 text = path.read_text(encoding="utf-8")
@@ -206,10 +206,10 @@ class TestGenerate(unittest.TestCase):
                 self.assertEqual(m.group(1), sha)
                 self.assertNotIn("{{", text, name)  # no unsubstituted placeholders
                 self.assertIn(f"wrote .claude/agents/{name}.md", out)
-            self.assertIn("effort: medium", (root / ".claude" / "agents" / "pt-plan-reviewer.md").read_text())
-            self.assertIn("effort: low", (root / ".claude" / "agents" / "pt-results-validator.md").read_text())
-            self.assertIn("tools: Read, Grep, Glob, Bash", (root / ".claude" / "agents" / "pt-plan-reviewer.md").read_text())
-            self.assertIn("tools: Read, Grep, Glob\n", (root / ".claude" / "agents" / "pt-board-reviewer.md").read_text())
+            self.assertIn("effort: medium", (root / ".claude" / "agents" / "aict-plan-reviewer.md").read_text())
+            self.assertIn("effort: low", (root / ".claude" / "agents" / "aict-results-validator.md").read_text())
+            self.assertIn("tools: Read, Grep, Glob, Bash", (root / ".claude" / "agents" / "aict-plan-reviewer.md").read_text())
+            self.assertIn("tools: Read, Grep, Glob\n", (root / ".claude" / "agents" / "aict-board-reviewer.md").read_text())
             self.assertIn("note: .claude/agents/ was just created", out)
 
     def test_unset_effort_drops_the_line(self):
@@ -220,7 +220,7 @@ class TestGenerate(unittest.TestCase):
         with tempfile.TemporaryDirectory() as tmp:
             root = make_project(tmp, profile=profile)
             self._generate(root)
-            text = (root / ".claude" / "agents" / "pt-results-validator.md").read_text()
+            text = (root / ".claude" / "agents" / "aict-results-validator.md").read_text()
             self.assertNotIn("effort:", text)
             self.assertIn("model: opus", text)
 
@@ -229,20 +229,20 @@ class TestGenerate(unittest.TestCase):
             root = make_project(tmp)
             agents = root / ".claude" / "agents"
             agents.mkdir(parents=True)
-            mine = agents / "pt-plan-reviewer.md"
-            mine.write_text("---\nname: pt-plan-reviewer\n---\nmy own agent\n")
+            mine = agents / "aict-plan-reviewer.md"
+            mine.write_text("---\nname: aict-plan-reviewer\n---\nmy own agent\n")
             code, out, err = self._generate(root)
             self.assertEqual(code, 0)
-            self.assertEqual(mine.read_text(), "---\nname: pt-plan-reviewer\n---\nmy own agent\n")
+            self.assertEqual(mine.read_text(), "---\nname: aict-plan-reviewer\n---\nmy own agent\n")
             self.assertIn("refused (user-owned, no marker)", out)
-            self.assertTrue((agents / "pt-results-validator.md").exists())
+            self.assertTrue((agents / "aict-results-validator.md").exists())
             self.assertNotIn("note: .claude/agents/ was just created", out)
 
     def test_marked_file_is_regenerated(self):
         with tempfile.TemporaryDirectory() as tmp:
             root = make_project(tmp)
             self._generate(root)
-            target = root / ".claude" / "agents" / "pt-plan-reviewer.md"
+            target = root / ".claude" / "agents" / "aict-plan-reviewer.md"
             first = target.read_text()
             profile_path = root / "plans" / "model-profile.md"
             profile_path.write_text(DEFAULT_PROFILE.replace(
@@ -260,8 +260,8 @@ class TestGenerate(unittest.TestCase):
         with tempfile.TemporaryDirectory() as tmp:
             root = make_project(tmp, profile=profile)
             code, out, err = self._generate(root)
-            self.assertFalse((root / ".claude" / "agents" / "pt-board-reviewer.md").exists())
-            self.assertTrue((root / ".claude" / "agents" / "pt-plan-reviewer.md").exists())
+            self.assertFalse((root / ".claude" / "agents" / "aict-board-reviewer.md").exists())
+            self.assertTrue((root / ".claude" / "agents" / "aict-plan-reviewer.md").exists())
             self.assertIn("board-reviewer", err)
 
     def test_no_profile_errors(self):
@@ -311,7 +311,7 @@ class TestCheck(unittest.TestCase):
             root = make_project(tmp)
             agents = root / ".claude" / "agents"
             agents.mkdir(parents=True)
-            (agents / "pt-plan-reviewer.md").write_text("---\nname: pt-plan-reviewer\n---\nmine\n")
+            (agents / "aict-plan-reviewer.md").write_text("---\nname: aict-plan-reviewer\n---\nmine\n")
             self.assertEqual(self._run(root, "check")[1], "")
 
 
@@ -330,8 +330,8 @@ class TestOrphanRemovalAndGuards(unittest.TestCase):
             profile.write_text(DEFAULT_PROFILE.replace("| board reviewer panel | opus | low | agent |\n", ""), encoding="utf-8")
             code, out, err = self._run(root, "generate")
             self.assertEqual(code, 0)
-            self.assertFalse((root / ".claude" / "agents" / "pt-board-reviewer.md").exists())
-            self.assertIn("removed stale .claude/agents/pt-board-reviewer.md", out)
+            self.assertFalse((root / ".claude" / "agents" / "aict-board-reviewer.md").exists())
+            self.assertIn("removed stale .claude/agents/aict-board-reviewer.md", out)
             code, out, err = self._run(root, "check")
             self.assertEqual(out, "")
 
@@ -342,19 +342,19 @@ class TestOrphanRemovalAndGuards(unittest.TestCase):
             profile = root / "plans" / "model-profile.md"
             profile.write_text(DEFAULT_PROFILE.replace("| plan review (verdict + grade) | opus | medium | agent |", "| plan review (verdict + grade) | opus | medium | nudge |"), encoding="utf-8")
             code, out, err = self._run(root, "generate")
-            self.assertFalse((root / ".claude" / "agents" / "pt-plan-reviewer.md").exists())
-            self.assertIn("removed stale .claude/agents/pt-plan-reviewer.md", out)
+            self.assertFalse((root / ".claude" / "agents" / "aict-plan-reviewer.md").exists())
+            self.assertIn("removed stale .claude/agents/aict-plan-reviewer.md", out)
 
     def test_user_owned_file_never_removed_on_missing_row(self):
         with tempfile.TemporaryDirectory() as tmp:
             root = make_project(tmp, profile=DEFAULT_PROFILE.replace("| board reviewer panel | opus | low | agent |\n", ""))
             agents = root / ".claude" / "agents"
             agents.mkdir(parents=True)
-            mine = agents / "pt-board-reviewer.md"
-            mine.write_text("---\nname: pt-board-reviewer\n---\nmine\n")
+            mine = agents / "aict-board-reviewer.md"
+            mine.write_text("---\nname: aict-board-reviewer\n---\nmine\n")
             code, out, err = self._run(root, "generate")
             self.assertTrue(mine.exists())
-            self.assertEqual(mine.read_text(), "---\nname: pt-board-reviewer\n---\nmine\n")
+            self.assertEqual(mine.read_text(), "---\nname: aict-board-reviewer\n---\nmine\n")
             self.assertNotIn("removed stale", out)
 
     def test_unreadable_profile_bails_without_touching_agents(self):
@@ -373,7 +373,7 @@ class TestOrphanRemovalAndGuards(unittest.TestCase):
         with tempfile.TemporaryDirectory() as tmp:
             root = make_project(tmp)
             self._run(root, "generate")
-            (root / ".claude" / "agents" / "pt-plan-reviewer.md").write_bytes(b"\xff\xfe broken")
+            (root / ".claude" / "agents" / "aict-plan-reviewer.md").write_bytes(b"\xff\xfe broken")
             code, out, err = self._run(root, "check")
             self.assertEqual((code, out), (0, ""))
 
@@ -551,7 +551,7 @@ class TestGenerateOutcomes(unittest.TestCase):
         with tempfile.TemporaryDirectory() as tmp:
             root = make_project(tmp)
             models.generate(root)
-            (root / ".claude" / "agents" / "pt-board-reviewer.md").unlink()
+            (root / ".claude" / "agents" / "aict-board-reviewer.md").unlink()
             res = models.generate(root)
             o = {r["stage"]: r["outcome"] for r in res["results"]}
             self.assertEqual(o["board-reviewer"], "created")
@@ -573,7 +573,7 @@ class TestGenerateOutcomes(unittest.TestCase):
             root = make_project(tmp)
             agents = root / ".claude" / "agents"
             agents.mkdir(parents=True)
-            (agents / "pt-plan-reviewer.md").write_text("---\nname: pt-plan-reviewer\n---\nmine\n")
+            (agents / "aict-plan-reviewer.md").write_text("---\nname: aict-plan-reviewer\n---\nmine\n")
             res = models.generate(root)
             o = {r["stage"]: r["outcome"] for r in res["results"]}
             self.assertEqual(o["plan-review"], "refused-user")
@@ -615,11 +615,11 @@ class TestAtomicWrite(unittest.TestCase):
 class TestReviewDiscipline(unittest.TestCase):
     def test_templates_carry_review_discipline(self):
         tdir = SCRIPTS.parent / "templates" / "agents"
-        board = (tdir / "pt-board-reviewer.md").read_text(encoding="utf-8")
+        board = (tdir / "aict-board-reviewer.md").read_text(encoding="utf-8")
         for marker in ("[blocker]", "[major]", "[minor]",
                        "Ground every claim", "Verify before returning"):
             self.assertIn(marker, board)
-        for name in ("pt-plan-reviewer.md", "pt-results-validator.md"):
+        for name in ("aict-plan-reviewer.md", "aict-results-validator.md"):
             text = (tdir / name).read_text(encoding="utf-8")
             self.assertIn("Verify before returning", text)
 
@@ -629,7 +629,7 @@ class TestCheckTemplateDrift(unittest.TestCase):
         root = Path(td)
         (root / "plans").mkdir()
         (root / "plans" / "master-plan.md").write_text(
-            "<!-- papertrail:master-plan -->\n", encoding="utf-8")
+            "<!-- aict:master-plan -->\n", encoding="utf-8")
         (root / "plans" / "model-profile.md").write_text(
             DEFAULT_PROFILE, encoding="utf-8")
         models.generate(root)
@@ -677,7 +677,7 @@ class TestCheckTemplateDrift(unittest.TestCase):
                 "plan review", "plan review DISABLED")
             prof.write_text(text, encoding="utf-8")
             new_sum = hashlib.sha256(prof.read_bytes()).hexdigest()
-            agent = root / ".claude" / "agents" / "pt-plan-reviewer.md"
+            agent = root / ".claude" / "agents" / "aict-plan-reviewer.md"
             agent.write_text(
                 re.sub(r"sha256:[0-9a-f]{64}", "sha256:" + new_sum,
                        agent.read_text(encoding="utf-8")),
@@ -687,7 +687,7 @@ class TestCheckTemplateDrift(unittest.TestCase):
     def test_user_owned_agent_stays_silent(self):
         with tempfile.TemporaryDirectory() as td:
             root = self._project(td)
-            agent = root / ".claude" / "agents" / "pt-plan-reviewer.md"
+            agent = root / ".claude" / "agents" / "aict-plan-reviewer.md"
             agent.write_text("my own reviewer, no marker\n", encoding="utf-8")
             self.assertEqual(self._check_stdout(root), "")
 

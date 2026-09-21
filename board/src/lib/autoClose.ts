@@ -14,7 +14,7 @@ export type AutoClosePhase =
 export const AUTO_CLOSE_SECONDS = 3;
 
 export function autoCloseKey(projectKey: string): string {
-  return `pt-autoclose:${projectKey}`;
+  return `aict-autoclose:${projectKey}`;
 }
 
 function enabled(key: string): boolean {

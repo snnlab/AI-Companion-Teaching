@@ -36,8 +36,8 @@ export function modelsEquivalent(a: string, b: string): boolean {
   return false;
 }
 
-export const PLAN_MARKER_PREFIX = "<!-- pt-model";
-const PLAN_MARKER_PREFIXES = ["<!-- pt-model"];
+export const PLAN_MARKER_PREFIX = "<!-- aict-model";
+const PLAN_MARKER_PREFIXES = ["<!-- aict-model"];
 
 export interface ParsedPlanModel {
   modelUsage: ModelUsage | null;
@@ -45,7 +45,7 @@ export interface ParsedPlanModel {
   body: string; // always safe to render
 }
 
-/** A plan version's first line may be `<!-- pt-model {ModelUsage json} -->`.
+/** A plan version's first line may be `<!-- aict-model {ModelUsage json} -->`.
  * Strip it before rendering (mirrors reportMarker), tolerating bad JSON. */
 export function parsePlanModelMarker(content: string): ParsedPlanModel {
   const nl = content.indexOf("\n");
@@ -54,7 +54,7 @@ export function parsePlanModelMarker(content: string): ParsedPlanModel {
     return { modelUsage: null, malformed: false, body: content };
   }
   const body = nl === -1 ? "" : content.slice(nl + 1);
-  const m = /^<!--\s*pt-model\s+(\{.*\})\s*-->\s*$/.exec(first.trim());
+  const m = /^<!--\s*aict-model\s+(\{.*\})\s*-->\s*$/.exec(first.trim());
   if (!m) return { modelUsage: null, malformed: true, body };
   try {
     const usage = coerceModelUsage(JSON.parse(m[1]));

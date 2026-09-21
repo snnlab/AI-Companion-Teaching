@@ -2,7 +2,7 @@ import json
 from pathlib import Path
 import sys
 
-sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "skills" / "managing-papertrail" / "scripts"))
+sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "skills" / "managing-aict" / "scripts"))
 from signoff_gate import parse_trailer, strip_trailer
 
 

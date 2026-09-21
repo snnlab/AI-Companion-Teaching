@@ -140,7 +140,7 @@ export default function SignOffView({ data }: { data: BoardData }) {
       }
       markDecision("approved");
     } catch {
-      await recoverPostFailure("Approval failed. Run /papertrail:sign to resume.");
+      await recoverPostFailure("Approval failed. Run /aict:sign to resume.");
     } finally {
       setBusy(false);
     }
@@ -174,7 +174,7 @@ export default function SignOffView({ data }: { data: BoardData }) {
       }
       markDecision("changes");
     } catch {
-      await recoverPostFailure("Change request failed. Run /papertrail:sign to resume.");
+      await recoverPostFailure("Change request failed. Run /aict:sign to resume.");
     } finally {
       setBusy(false);
     }

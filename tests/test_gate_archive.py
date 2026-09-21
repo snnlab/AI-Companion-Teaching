@@ -11,7 +11,7 @@ from pathlib import Path
 
 GATE = (
     Path(__file__).resolve().parents[1]
-    / "skills" / "managing-papertrail" / "scripts" / "signoff_gate.py"
+    / "skills" / "managing-aict" / "scripts" / "signoff_gate.py"
 )
 
 
@@ -19,14 +19,14 @@ def make_initialized(root: Path, with_archive=True):
     plans = root / "plans"
     (plans / "execution").mkdir(parents=True)
     (plans / "master-plan.md").write_text(
-        "<!-- papertrail:master-plan -->\n# MP\n", encoding="utf-8")
+        "<!-- aict:master-plan -->\n# MP\n", encoding="utf-8")
     (root / "CLAUDE.md").write_text(
-        "<!-- papertrail:start -->\nconventions\n", encoding="utf-8")
+        "<!-- aict:start -->\nconventions\n", encoding="utf-8")
     arch = plans / "archive"
     arch.mkdir()
     if with_archive:
         (arch / "master-plan-2026-07-01.md").write_text(
-            "<!-- papertrail:master-plan -->\n# Old MP\n", encoding="utf-8")
+            "<!-- aict:master-plan -->\n# Old MP\n", encoding="utf-8")
     return arch
 
 

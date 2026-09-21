@@ -84,7 +84,7 @@ class TestSignRoutes(unittest.TestCase):
 
     def _ticket(self, version=2):
         return (self.root / "plans" / "execution" /
-                (".papertrail-approved-01-data-prep-v%d" % version))
+                (".aict-approved-01-data-prep-v%d" % version))
 
     def test_approve_writes_ticket(self):
         self._start()

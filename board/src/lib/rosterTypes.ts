@@ -9,7 +9,7 @@
 // full, valid BoardData, unmodified.
 //
 // These shapes are shared with the classroom server implementation (a
-// parallel, separate piece of work) and with skills/managing-papertrail's
+// parallel, separate piece of work) and with skills/managing-aict's
 // submit.py envelope. Do not change field names/shapes here without
 // reconciling both sides.
 

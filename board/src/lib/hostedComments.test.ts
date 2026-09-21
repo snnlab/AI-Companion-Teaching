@@ -33,7 +33,7 @@ function boardWith(planContent: string, results?: ResultsBundle[]): BoardData {
 }
 
 const REPORT_MARKER =
-  '<!-- pt-report {"schemaVersion": 1, "component": "01-x", "bundle": 1, ' +
+  '<!-- aict-report {"schemaVersion": 1, "component": "01-x", "bundle": 1, ' +
   '"plan": 1, "verdict": "pending", "generated": "2026-07-10T14:30:00Z"} -->';
 
 // A board with a published report on 01-x r1, marker-stamped like the real

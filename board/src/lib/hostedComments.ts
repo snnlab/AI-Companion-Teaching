@@ -8,7 +8,7 @@ export function newUuid(): string {
   return `${hex.slice(0, 8)}-${hex.slice(8, 12)}-4${hex.slice(13, 16)}-8${hex.slice(17, 20)}-${hex.slice(20, 32)}`;
 }
 
-const CLIENT_KEY = "pt-board:clientId";
+const CLIENT_KEY = "aict-board:clientId";
 export function getClientId(storage: Storage): string {
   let id = storage.getItem(CLIENT_KEY);
   if (!id) { id = newUuid(); storage.setItem(CLIENT_KEY, id); }

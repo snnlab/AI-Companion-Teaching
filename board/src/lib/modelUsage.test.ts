@@ -41,7 +41,7 @@ describe("modelsEquivalent", () => {
 describe("parsePlanModelMarker", () => {
   const usage = { prescribed: { model: "opus", effort: "max" }, reported: { model: "opus", effort: null } };
   it("extracts and strips a valid marker", () => {
-    const content = `<!-- pt-model ${JSON.stringify(usage)} -->\n# Plan v1\n\nBody.`;
+    const content = `<!-- aict-model ${JSON.stringify(usage)} -->\n# Plan v1\n\nBody.`;
     const p = parsePlanModelMarker(content);
     expect(p.modelUsage).toEqual(usage);
     expect(p.malformed).toBe(false);
@@ -53,11 +53,11 @@ describe("parsePlanModelMarker", () => {
     expect(p.body).toBe("# Plan v1\n\nBody.");
   });
   it("strips a malformed marker line so it can never hide the body", () => {
-    const p = parsePlanModelMarker("<!-- pt-model {broken \n# Plan v1\n");
+    const p = parsePlanModelMarker("<!-- aict-model {broken \n# Plan v1\n");
     expect(p.malformed).toBe(true);
     expect(p.modelUsage).toBeNull();
     expect(p.body).toBe("# Plan v1\n");
-    expect(stripPlanMarkerLine("<!-- pt-model {broken \nX\n")).toBe("X\n");
+    expect(stripPlanMarkerLine("<!-- aict-model {broken \nX\n")).toBe("X\n");
   });
 });
 

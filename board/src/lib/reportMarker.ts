@@ -1,5 +1,5 @@
 // The generated report's first line is a machine-readable identity marker:
-// <!-- pt-report {"schemaVersion": 2, "component": "<NN-slug>", "bundle": N,
+// <!-- aict-report {"schemaVersion": 2, "component": "<NN-slug>", "bundle": N,
 //      "plan": N|null, "validation": "<manifest validation status or none>",
 //      "generated": "<ISO>"} -->
 // The board ALWAYS strips the first line before rendering when it starts with
@@ -25,8 +25,8 @@ export interface ParsedReport {
   body: string; // always safe to render
 }
 
-export const MARKER_PREFIX = "<!-- pt-report";
-const MARKER_PREFIXES = ["<!-- pt-report"];
+export const MARKER_PREFIX = "<!-- aict-report";
+const MARKER_PREFIXES = ["<!-- aict-report"];
 export const REPORT_DOCKEY_RE = /^plans\/reports\/(.+)-r(\d+)-report\.md$/;
 
 const VERDICTS = new Set(["accepted", "changes-requested", "pending"]);
@@ -47,7 +47,7 @@ export function parseReport(content: string): ParsedReport {
     return { marker: null, malformed: false, body: content };
   }
   const body = nl === -1 ? "" : content.slice(nl + 1);
-  const m = /^<!--\s*pt-report\s+(\{.*\})\s*-->\s*$/.exec(first.trim());
+  const m = /^<!--\s*aict-report\s+(\{.*\})\s*-->\s*$/.exec(first.trim());
   if (!m) return { marker: null, malformed: true, body };
   try {
     const j = JSON.parse(m[1]) as Record<string, unknown>;

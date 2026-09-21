@@ -11,7 +11,7 @@ from pathlib import Path
 
 SCRIPTS = (
     Path(__file__).resolve().parents[1]
-    / "skills" / "managing-papertrail" / "scripts"
+    / "skills" / "managing-aict" / "scripts"
 )
 sys.path.insert(0, str(SCRIPTS))
 import check_update as cu  # noqa: E402
@@ -163,20 +163,20 @@ class TestMarketplaceResolution(unittest.TestCase):
         self.assertEqual(cu.resolve_marketplace_name(known), "campus-mkt")
 
     def test_fallback_when_absent(self):
-        self.assertEqual(cu.resolve_marketplace_name({}), "papertrail")
+        self.assertEqual(cu.resolve_marketplace_name({}), "aict")
 
 
 class TestNoticeAndOutput(unittest.TestCase):
     def test_notice_has_versions_highlights_and_command(self):
         notice = cu.format_notice("0.11.0", "0.12.0",
-                                  ["Update reminders.", "Version pinning."], "papertrail")
+                                  ["Update reminders.", "Version pinning."], "aict")
         self.assertIn("v0.12.0 available (you have v0.11.0)", notice)
         self.assertIn("Update reminders.", notice)
-        self.assertIn("/plugin update papertrail@papertrail", notice)
+        self.assertIn("/plugin update aict@aict", notice)
         self.assertIn("/reload-plugins", notice)
 
     def test_notice_without_highlights_still_valid(self):
-        notice = cu.format_notice("0.11.0", "0.12.0", [], "papertrail")
+        notice = cu.format_notice("0.11.0", "0.12.0", [], "aict")
         self.assertIn("v0.12.0 available", notice)
         self.assertIn("/plugin update", notice)
 
@@ -215,7 +215,7 @@ class TestMain(unittest.TestCase):
         root = Path(d) / "root"
         (root / ".claude-plugin").mkdir(parents=True)
         (root / ".claude-plugin" / "plugin.json").write_text(
-            json.dumps({"name": "papertrail", "version": version})
+            json.dumps({"name": "aict", "version": version})
         )
         return root
 
@@ -276,7 +276,7 @@ class TestMain(unittest.TestCase):
             root = self._plugin_root(d, "0.11.0")
             data = Path(d) / "data"
             env = {"CLAUDE_PLUGIN_ROOT": str(root), "CLAUDE_PLUGIN_DATA": str(data),
-                   "PAPERTRAIL_NO_UPDATE_CHECK": "1"}
+                   "AICT_NO_UPDATE_CHECK": "1"}
             rc, out = self._run(env, {self.MANIFEST_URL: json.dumps({"version": "0.12.0"})})
             self.assertEqual(out, "")
 

@@ -66,7 +66,7 @@ export interface ModelProfileRow {
 
 // Server-built snapshot of the profile. `baselineHash` is echoed back on Save
 // for optimistic concurrency; `editable` is false for a hand-edited /
-// non-canonical / unreadable file (edit those via /papertrail:models).
+// non-canonical / unreadable file (edit those via /aict:models).
 export interface ModelProfile {
   path: string;
   exists: boolean;
@@ -513,7 +513,7 @@ export interface ReviewRequest {
 }
 
 // Rides the feedback fence like ReviewRequest: the Generate report button
-// submits it, the session runs /papertrail:report on the bundle (v0.10).
+// submits it, the session runs /aict:report on the bundle (v0.10).
 export interface ReportRequest {
   component: string;
   resultsVersion: number;

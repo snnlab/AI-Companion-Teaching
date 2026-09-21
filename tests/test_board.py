@@ -21,7 +21,7 @@ from pathlib import Path
 
 SCRIPTS = (
     Path(__file__).resolve().parents[1]
-    / "skills" / "managing-papertrail" / "scripts"
+    / "skills" / "managing-aict" / "scripts"
 )
 BOARD = SCRIPTS / "board.py"
 sys.path.insert(0, str(SCRIPTS))
@@ -29,13 +29,13 @@ import board  # noqa: E402
 
 
 def make_project(root: Path):
-    """Minimal initialized papertrail project with two components."""
+    """Minimal initialized aict project with two components."""
     plans = root / "plans"
     (plans / "execution" / "01-data-prep").mkdir(parents=True)
     (plans / "execution" / "02-other").mkdir(parents=True)
     (plans / "reviews").mkdir()
     (plans / "master-plan.md").write_text(
-        "<!-- papertrail:master-plan -->\n"
+        "<!-- aict:master-plan -->\n"
         "# Test Project — Master Plan\n\n"
         "## Components\n\n"
         "| # | Component | Status | Execution plan | Outcome / notes | Serves |\n"
@@ -96,7 +96,7 @@ def add_archive(root: Path):
     arch = plans / "archive"
     arch.mkdir()
     (arch / "master-plan-2026-07-01.md").write_text(
-        "<!-- papertrail:master-plan -->\n"
+        "<!-- aict:master-plan -->\n"
         "# Test Project — Master Plan\n\n"
         "## Components\n\n"
         "| # | Component | Status | Execution plan | Outcome / notes | Serves |\n"
@@ -128,7 +128,7 @@ def add_report(root: Path):
     rep = root / "plans" / "reports"
     rep.mkdir(parents=True, exist_ok=True)
     (rep / "01-data-prep-r1-report.md").write_text(
-        '<!-- pt-report {"schemaVersion": 1, "component": "01-data-prep", "bundle": 1, '
+        '<!-- aict-report {"schemaVersion": 1, "component": "01-data-prep", "bundle": 1, '
         '"plan": 1, "verdict": "accepted", "generated": "2026-07-03T12:00"} -->\n'
         "# Data prep — Report (r1)\n\nFindings body.\n",
         encoding="utf-8",
@@ -208,7 +208,7 @@ class TestWebConfig(unittest.TestCase):
 class TestWebPublishingDocs(unittest.TestCase):
     def test_firewall_rate_limit_is_required_before_first_deploy(self):
         repo = Path(__file__).resolve().parents[1]
-        runbook = (repo / "skills" / "managing-papertrail" / "references" /
+        runbook = (repo / "skills" / "managing-aict" / "references" /
                    "web-publishing.md").read_text(encoding="utf-8")
         guide = (repo / "docs" / "hosting-the-board.md").read_text(encoding="utf-8")
 
@@ -221,7 +221,7 @@ class TestWebPublishingDocs(unittest.TestCase):
     def test_web_modes_route_to_named_reference_sections(self):
         repo = Path(__file__).resolve().parents[1]
         command = (repo / "commands" / "board.md").read_text(encoding="utf-8")
-        runbook = (repo / "skills" / "managing-papertrail" / "references" /
+        runbook = (repo / "skills" / "managing-aict" / "references" /
                    "web-publishing.md").read_text(encoding="utf-8")
 
         for flag, heading in (
@@ -1942,7 +1942,7 @@ def gate_project(root):
     """make_project + the dual opt-in markers signoff_gate requires."""
     make_project(root)
     (root / "CLAUDE.md").write_text(
-        "<!-- papertrail:start -->\n", encoding="utf-8")
+        "<!-- aict:start -->\n", encoding="utf-8")
 
 
 class TestHarness(unittest.TestCase):
@@ -2317,7 +2317,7 @@ class TestOrderSlot(unittest.TestCase):
         self.assertEqual(signoff_body["error"], "pending-order")
         self.assertEqual(self.pending.read_bytes(), original)
         ticket = (self.root / "plans" / "execution"
-                  / ".papertrail-approved-01-data-prep-v2")
+                  / ".aict-approved-01-data-prep-v2")
         self.assertFalse(ticket.exists())
 
     def test_verbatim_client_doc_gains_action_id_fence(self):
@@ -2407,7 +2407,7 @@ class TestFeedbackRoute(unittest.TestCase):
             root = Path(td)
             make_project(root)
             ticket = (root / "plans" / "execution" /
-                      ".papertrail-approved-01-data-prep-v2")
+                      ".aict-approved-01-data-prep-v2")
             url, info, thread = serve_in_thread(root, timeout=15)
             old_action = {
                 "kind": "signoff", "component": "01-data-prep",
@@ -2746,12 +2746,12 @@ class TestPullStaleness(unittest.TestCase):
         self.assertNotEqual(board.fnv1a_hex("café"), board.fnv1a_hex("cafe"))
 
     def test_strip_report_marker(self):
-        c = '<!-- pt-report {"schemaVersion": 1} -->\n# Body\n'
+        c = '<!-- aict-report {"schemaVersion": 1} -->\n# Body\n'
         self.assertEqual(board._strip_report_marker(c), "# Body\n")
         self.assertEqual(board._strip_report_marker("# Body\n"), "# Body\n")
 
     def test_strip_report_marker_does_not_recognize_legacy_prefixes(self):
-        # PaperTrail has no prior installs to migrate — a stale pb-report or
+        # AICT has no prior installs to migrate — a stale pb-report or
         # rp-report marker (from a hand-edited or pre-fork file) is left alone,
         # not stripped as if it were still recognized.
         c = '<!-- pb-report {"schemaVersion": 1} -->\n# Body\n'
@@ -2959,7 +2959,7 @@ class TestModelProfileWrite(unittest.TestCase):
             self.assertTrue(body["saved"])
             text = (root / "plans" / "model-profile.md").read_text()
             self.assertIn("| plan review (verdict + grade) | sonnet | medium | agent |", text)
-            agent = (root / ".claude" / "agents" / "pt-plan-reviewer.md").read_text()
+            agent = (root / ".claude" / "agents" / "aict-plan-reviewer.md").read_text()
             self.assertIn("model: sonnet", agent)
             self.assertTrue(body["restartNeeded"])
             self.assertIn("plan-review", body["changedAgentStages"])
@@ -3060,7 +3060,7 @@ class TestModelProfileWrite(unittest.TestCase):
         with tempfile.TemporaryDirectory() as d:
             root = Path(d); make_project(root); add_profile(root)
             agents = root / ".claude" / "agents"; agents.mkdir(parents=True)
-            (agents / "pt-plan-reviewer.md").write_text("---\nname: pt-plan-reviewer\n---\nmine\n")
+            (agents / "aict-plan-reviewer.md").write_text("---\nname: aict-plan-reviewer\n---\nmine\n")
             url, info, t = serve_in_thread(root)
             bh = self._baseline(url)
             status, body, _ = self._save(url, info["boardToken"], bh,
@@ -3087,7 +3087,7 @@ class TestModelProfileWrite(unittest.TestCase):
         with tempfile.TemporaryDirectory() as d:
             root = Path(d); make_project(root); add_profile(root)
             board.models.generate(root)
-            (root / ".claude" / "agents" / "pt-board-reviewer.md").unlink()
+            (root / ".claude" / "agents" / "aict-board-reviewer.md").unlink()
             url, info, t = serve_in_thread(root)
             bh = self._baseline(url)
             status, body, _ = self._save(url, info["boardToken"], bh,
@@ -3110,7 +3110,7 @@ class TestModelProfileWrite(unittest.TestCase):
             row = next(r for r in body["modelProfile"]["rows"] if r["stage"] == "results-validation")
             self.assertEqual(row["model"], "haiku")
             self.assertIn("model: haiku",
-                          (root / ".claude" / "agents" / "pt-results-validator.md").read_text())
+                          (root / ".claude" / "agents" / "aict-results-validator.md").read_text())
 
     def test_generation_failure_still_saves_with_error_not_a_crash(self):
         with tempfile.TemporaryDirectory() as d:
@@ -3244,7 +3244,7 @@ class TestDetailLevel(unittest.TestCase):
 
 
 class TestLauncherScript(unittest.TestCase):
-    """The generated pt-board launcher text and its shell-injection safety."""
+    """The generated aict-board launcher text and its shell-injection safety."""
 
     def test_has_shebang_marker_and_required_fields(self):
         s = board.launcher_script("/plugins/x/board.py", interpreter="/usr/bin/python3")
@@ -3280,7 +3280,7 @@ class TestEnsureLauncher(unittest.TestCase):
         with tempfile.TemporaryDirectory() as d:
             root = Path(d); make_project(root)
             self.assertEqual(board.ensure_launcher(root), "created")
-            lp = root / "pt-board"
+            lp = root / "aict-board"
             self.assertTrue(lp.is_file())
             self.assertIn(board.LAUNCHER_MARKER, self._read(lp))
             self.assertTrue(os.access(lp, os.X_OK))
@@ -3294,7 +3294,7 @@ class TestEnsureLauncher(unittest.TestCase):
     def test_rewrites_stale_managed_content(self):
         with tempfile.TemporaryDirectory() as d:
             root = Path(d); make_project(root)
-            lp = root / "pt-board"
+            lp = root / "aict-board"
             lp.write_text(
                 "#!/bin/sh\n# %s\nexec /old/py /old/board.py\n" % board.LAUNCHER_MARKER,
                 encoding="utf-8")
@@ -3306,7 +3306,7 @@ class TestEnsureLauncher(unittest.TestCase):
         with tempfile.TemporaryDirectory() as d:
             root = Path(d); make_project(root)
             board.ensure_launcher(root)
-            lp = root / "pt-board"
+            lp = root / "aict-board"
             os.chmod(lp, 0o644)
             self.assertEqual(board.ensure_launcher(root), "refreshed")
             self.assertTrue(os.access(lp, os.X_OK))
@@ -3314,7 +3314,7 @@ class TestEnsureLauncher(unittest.TestCase):
     def test_refuses_foreign_regular_file_nonfatal(self):
         with tempfile.TemporaryDirectory() as d:
             root = Path(d); make_project(root)
-            lp = root / "pt-board"
+            lp = root / "aict-board"
             lp.write_text("#!/bin/sh\necho my own script\n", encoding="utf-8")
             status = board.ensure_launcher(root)
             self.assertTrue(status.startswith("skipped"), status)
@@ -3323,7 +3323,7 @@ class TestEnsureLauncher(unittest.TestCase):
     def test_refuses_foreign_regular_file_fatal_when_explicit(self):
         with tempfile.TemporaryDirectory() as d:
             root = Path(d); make_project(root)
-            (root / "pt-board").write_text("mine\n", encoding="utf-8")
+            (root / "aict-board").write_text("mine\n", encoding="utf-8")
             with self.assertRaises(SystemExit):
                 board.ensure_launcher(root, explicit=True)
 
@@ -3332,7 +3332,7 @@ class TestEnsureLauncher(unittest.TestCase):
             root = Path(d); make_project(root)
             target = root / "secret.txt"
             target.write_text("do not touch\n", encoding="utf-8")
-            (root / "pt-board").symlink_to(target)
+            (root / "aict-board").symlink_to(target)
             status = board.ensure_launcher(root)
             self.assertTrue(status.startswith("skipped"), status)
             self.assertEqual(target.read_text(encoding="utf-8"), "do not touch\n")
@@ -3340,7 +3340,7 @@ class TestEnsureLauncher(unittest.TestCase):
     def test_refuses_directory(self):
         with tempfile.TemporaryDirectory() as d:
             root = Path(d); make_project(root)
-            (root / "pt-board").mkdir()
+            (root / "aict-board").mkdir()
             self.assertTrue(board.ensure_launcher(root).startswith("skipped"))
 
     def test_no_git_still_creates_launcher(self):
@@ -3356,7 +3356,7 @@ class TestGitExclude(unittest.TestCase):
             (root / ".git" / "info").mkdir(parents=True)
             board.ensure_launcher(root)
             excl = (root / ".git" / "info" / "exclude").read_text(encoding="utf-8")
-            self.assertIn("/pt-board", excl)
+            self.assertIn("/aict-board", excl)
 
     def test_not_duplicated_across_calls(self):
         with tempfile.TemporaryDirectory() as d:
@@ -3365,7 +3365,7 @@ class TestGitExclude(unittest.TestCase):
             board.ensure_launcher(root)
             board.ensure_launcher(root)
             excl = (root / ".git" / "info" / "exclude").read_text(encoding="utf-8")
-            self.assertEqual(excl.count("/pt-board"), 1)
+            self.assertEqual(excl.count("/aict-board"), 1)
 
     def test_worktree_gitfile_redirect(self):
         with tempfile.TemporaryDirectory() as d:
@@ -3375,7 +3375,7 @@ class TestGitExclude(unittest.TestCase):
             (root / ".git").write_text("gitdir: %s\n" % realgit, encoding="utf-8")
             board.ensure_launcher(root)
             excl = (realgit / "info" / "exclude").read_text(encoding="utf-8")
-            self.assertIn("/pt-board", excl)
+            self.assertIn("/aict-board", excl)
 
 
 class TestHealthyRunningBoard(unittest.TestCase):
@@ -3476,7 +3476,7 @@ class TestPlansFingerprint(unittest.TestCase):
             (plans / ".board.lock").write_text("{}", encoding="utf-8")
             (plans / ".board-feedback.md").write_text("x", encoding="utf-8")
             (plans / ".board-feedback.md.tmp").write_text("x", encoding="utf-8")
-            (plans / ".papertrail-approved-01-data-prep-v2").write_text("h", encoding="utf-8")
+            (plans / ".aict-approved-01-data-prep-v2").write_text("h", encoding="utf-8")
             (plans / "execution" / "01-data-prep" / ".sign-feedback-v2.md"
              ).write_text("no", encoding="utf-8")
             self.assertEqual(f1, self._fp(root))

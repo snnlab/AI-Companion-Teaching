@@ -14,7 +14,7 @@ from pathlib import Path
 
 SCRIPTS = (
     Path(__file__).resolve().parents[1]
-    / "skills" / "managing-papertrail" / "scripts"
+    / "skills" / "managing-aict" / "scripts"
 )
 SUBMIT = SCRIPTS / "submit.py"
 sys.path.insert(0, str(SCRIPTS))
@@ -23,11 +23,11 @@ import board  # noqa: E402
 
 
 def make_project(root: Path):
-    """Minimal initialized papertrail project with one signed version."""
+    """Minimal initialized aict project with one signed version."""
     plans = root / "plans"
     (plans / "execution" / "01-data-prep").mkdir(parents=True)
     (plans / "master-plan.md").write_text(
-        "<!-- papertrail:master-plan -->\n"
+        "<!-- aict:master-plan -->\n"
         "# Test — Master Plan\n\n"
         "## Components\n\n"
         "| # | Analysis step | Status | Execution plan | Outcome / notes | Serves |\n"
@@ -132,7 +132,7 @@ class TestGitLogExcerpt(unittest.TestCase):
             _init_git(root, when=_iso_days_ago(50))
             # master-plan.md committed later, still comfortably inside 120 days
             _commit(root, "plans/master-plan.md",
-                    "<!-- papertrail:master-plan -->\n# T\n",
+                    "<!-- aict:master-plan -->\n# T\n",
                     "add master plan", _iso_days_ago(20))
             _commit(root, "plans/decision-log.md", "entry\n",
                     "decision entry", _iso_days_ago(5))

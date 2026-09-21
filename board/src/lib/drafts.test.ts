@@ -45,7 +45,7 @@ describe("live draft storage", () => {
 
   it("draftSuffixKey composes a suffixed key off any base", () => {
     expect(draftSuffixKey(liveDraftKey(PID), "seeded")).toBe(
-      `pt-board:${PID}:live:seeded`,
+      `aict-board:${PID}:live:seeded`,
     );
   });
 

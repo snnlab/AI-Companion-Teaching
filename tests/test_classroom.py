@@ -13,7 +13,7 @@ from pathlib import Path
 
 SCRIPTS = (
     Path(__file__).resolve().parents[1]
-    / "skills" / "managing-papertrail" / "scripts"
+    / "skills" / "managing-aict" / "scripts"
 )
 sys.path.insert(0, str(SCRIPTS))
 import classroom  # noqa: E402
@@ -24,7 +24,7 @@ def make_project(root: Path):
     plans = root / "plans"
     (plans / "execution" / "01-data-prep").mkdir(parents=True)
     (plans / "master-plan.md").write_text(
-        "<!-- papertrail:master-plan -->\n# Test — Master Plan\n\n"
+        "<!-- aict:master-plan -->\n# Test — Master Plan\n\n"
         "## Components\n\n"
         "| # | Analysis step | Status | Execution plan | Outcome / notes | Serves |\n"
         "|---|-----------|--------|----------------|-----------------|--------|\n"

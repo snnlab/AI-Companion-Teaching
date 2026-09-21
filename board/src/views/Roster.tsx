@@ -378,7 +378,7 @@ export default function Roster({ data }: { data: RosterData }) {
     <div>
       {data.students.length === 0 ? (
         <div className="rounded-lg border border-dashed border-stone-300 dark:border-stone-600 bg-white dark:bg-stone-900 p-10 text-center text-sm text-stone-500">
-          No students registered yet. Run <code>/papertrail:host --add-student</code> or{" "}
+          No students registered yet. Run <code>/aict:host --add-student</code> or{" "}
           <code>--roster</code> to add them.
         </div>
       ) : (

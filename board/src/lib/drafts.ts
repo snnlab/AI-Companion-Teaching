@@ -1,6 +1,6 @@
 // Live-board draft persistence (control surface). The live board stores
 // pending annotations under a STABLE per-project key — the server's projectId
-// — so a relaunch with changed payload never orphans unsent drafts. PaperTrail
+// — so a relaunch with changed payload never orphans unsent drafts. AICT
 // is a brand-new tool with no pre-rename users, so there is no legacy key to
 // migrate from — this just reads and writes the current key directly.
 // Remote and hosted boards keep their own schemes untouched.
@@ -10,7 +10,7 @@ import type { Annotation } from "./types";
 export type StorageLike = Pick<Storage, "getItem" | "setItem" | "removeItem">;
 
 export function liveDraftKey(projectId: string): string {
-  return `pt-board:${projectId}:live`;
+  return `aict-board:${projectId}:live`;
 }
 
 export function draftSuffixKey(base: string, suffix: "reviewer" | "seeded"): string {

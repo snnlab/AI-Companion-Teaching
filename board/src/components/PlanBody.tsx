@@ -65,7 +65,7 @@ function StepCards({ body, detailOpen }: { body: string; detailOpen: boolean }) 
           >
             <div
               className="mb-1 flex items-center gap-2 text-[11px] font-semibold uppercase tracking-wide"
-              style={{ color: "var(--pt-prose-muted)" }}
+              style={{ color: "var(--aict-prose-muted)" }}
             >
               Step {i + 1} of {split.items.length}
               {it.task && (

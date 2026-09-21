@@ -82,7 +82,7 @@ export default function Archive({
     return (
       <div className="rounded-lg border border-dashed border-stone-300 dark:border-stone-600 bg-white dark:bg-stone-900 p-10 text-center text-sm text-stone-500">
         No archived master plans. Renewing the project's direction with{" "}
-        <code>/papertrail:renew</code> archives the current plan here.
+        <code>/aict:renew</code> archives the current plan here.
       </div>
     );
   }

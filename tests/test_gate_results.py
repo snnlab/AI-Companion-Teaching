@@ -13,7 +13,7 @@ from pathlib import Path
 
 GATE = (
     Path(__file__).resolve().parents[1]
-    / "skills" / "managing-papertrail" / "scripts" / "signoff_gate.py"
+    / "skills" / "managing-aict" / "scripts" / "signoff_gate.py"
 )
 
 
@@ -24,9 +24,9 @@ def make_initialized(root: Path):
     (rdir / "manifest.json").write_text("{}", encoding="utf-8")
     (rdir / "report.md").write_text("# R\n", encoding="utf-8")
     (plans / "master-plan.md").write_text(
-        "<!-- papertrail:master-plan -->\n# MP\n", encoding="utf-8")
+        "<!-- aict:master-plan -->\n# MP\n", encoding="utf-8")
     (root / "CLAUDE.md").write_text(
-        "<!-- papertrail:start -->\nconventions\n", encoding="utf-8")
+        "<!-- aict:start -->\nconventions\n", encoding="utf-8")
     return rdir
 
 
@@ -103,9 +103,9 @@ def make_init_component(root: Path, slug="03-x"):
     plans = root / "plans"
     (plans / "execution" / slug).mkdir(parents=True)
     (plans / "master-plan.md").write_text(
-        "<!-- papertrail:master-plan -->\n# MP\n", encoding="utf-8")
+        "<!-- aict:master-plan -->\n# MP\n", encoding="utf-8")
     (root / "CLAUDE.md").write_text(
-        "<!-- papertrail:start -->\nx\n", encoding="utf-8")
+        "<!-- aict:start -->\nx\n", encoding="utf-8")
     return plans / "execution" / slug
 
 
@@ -118,7 +118,7 @@ def write_ticket(root: Path, slug, version, draft, *, expiry=None,
         "approver": "BK", "batchId": "b1", "approvedAt": "2026-07-07 10:00",
         "expiry": time.time() + 604800 if expiry is None else expiry,
     }
-    tp = root / "plans" / "execution" / (".papertrail-approved-%s-v%d" % (slug, version))
+    tp = root / "plans" / "execution" / (".aict-approved-%s-v%d" % (slug, version))
     tp.write_text(json.dumps(doc), encoding="utf-8")
     return tp
 
@@ -155,7 +155,7 @@ class TestGateBatchTickets(unittest.TestCase):
         with tempfile.TemporaryDirectory() as tmp:
             root = Path(tmp)
             make_init_component(root)
-            tp = root / "plans" / "execution" / ".papertrail-approved-03-x-v1"
+            tp = root / "plans" / "execution" / ".aict-approved-03-x-v1"
             code, decision = run_gate(tmp, "Write", tp, content='{"slug":"03-x"}')
             self.assertEqual((code, decision), (0, "deny"))
 
@@ -210,7 +210,7 @@ class TestGateBatchTickets(unittest.TestCase):
             import board  # noqa: E402
             import signoff_gate as gate  # noqa: E402
 
-            marker = ('<!-- pt-model {"prescribed":null,"reported":'
+            marker = ('<!-- aict-model {"prescribed":null,"reported":'
                       '{"model":"sonnet","effort":null}} -->')
             v1 = (marker + "\n# X — Execution Plan v1\n\n"
                   "## Goal and success criteria\n\nDo the thing.\n\n"
@@ -240,7 +240,7 @@ class TestGateBatchTickets(unittest.TestCase):
             draft.write_text(candidate, encoding="utf-8")
 
             master = (
-                "<!-- papertrail:master-plan -->\n# MP\n\n"
+                "<!-- aict:master-plan -->\n# MP\n\n"
                 "| # | Component | Status | Execution plan | Outcome / notes | Serves |\n"
                 "|---|-----------|--------|----------------|-----------------|--------|\n"
                 "| 3 | X | planned | [v2](execution/03-x/v2.md) | — | RQ1 |\n"

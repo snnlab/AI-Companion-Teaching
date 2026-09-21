@@ -1,0 +1,373 @@
+<!doctype html>
+<html lang="ko">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="robots" content="noindex">
+<title>내 피드백</title>
+<style>
+  :root { color-scheme: light; }
+  * { box-sizing: border-box; }
+  body {
+    font: 15px/1.6 system-ui, -apple-system, "Segoe UI", Roboto, "Noto Sans KR", sans-serif;
+    margin: 0; background: #f6f7f9; color: #1c1917;
+  }
+  main { max-width: 720px; margin: 0 auto; padding: 1.5rem 1rem 4rem; }
+  h1 { font-size: 1.25rem; margin: 0 0 .25rem; }
+  .muted { color: #78716c; font-size: .9rem; }
+  .card {
+    background: #fff; border: 1px solid #e7e5e4; border-radius: 12px;
+    padding: 1rem 1.1rem; margin-top: 1rem; box-shadow: 0 1px 3px rgba(0,0,0,.04);
+  }
+  .sub-head { display: flex; flex-wrap: wrap; align-items: baseline; gap: .5rem; margin-bottom: .5rem; }
+  .sub-head strong { font-size: .98rem; }
+  .badge {
+    display: inline-block; font-size: .72rem; font-weight: 700; letter-spacing: .02em;
+    padding: .12rem .5rem; border-radius: 999px; background: #dbeafe; color: #1d4ed8;
+    border: 1px solid #bfdbfe; text-transform: uppercase;
+  }
+  .done { background: #dcfce7; color: #15803d; border-color: #bbf7d0; }
+  .comment { border-top: 1px solid #f0efed; padding: .8rem 0 .2rem; }
+  .comment:first-of-type { border-top: 0; }
+  .comment .where { font-size: .8rem; color: #78716c; margin-bottom: .3rem; }
+  .comment blockquote {
+    margin: .3rem 0; padding: .3rem .7rem; border-left: 3px solid #d6d3d1;
+    color: #57534e; font-size: .9rem; white-space: pre-wrap;
+  }
+  .comment .body { white-space: pre-wrap; }
+  .comment .by { font-size: .78rem; color: #a8a29e; margin-top: .3rem; }
+  form { background: #fff; padding: 1.5rem; border-radius: 12px; box-shadow: 0 1px 8px rgba(0,0,0,.08); margin-top: 1rem; }
+  label { display: block; font-size: .85rem; color: #444; margin-bottom: .4rem; }
+  input[type=text] {
+    width: 100%; font-size: 1rem; padding: .65rem; border: 1px solid #ccc;
+    border-radius: 8px; font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  }
+  button {
+    font-size: .95rem; padding: .6rem 1rem; border: 0; border-radius: 8px;
+    background: #2563eb; color: #fff; cursor: pointer;
+  }
+  button.ghost { background: transparent; color: #2563eb; padding: .4rem .3rem; }
+  .row { display: flex; gap: .6rem; align-items: center; flex-wrap: wrap; margin-top: 1rem; }
+  .err { color: #b91c1c; font-size: .85rem; margin-top: .6rem; }
+  .empty { text-align: center; padding: 2.5rem 1rem; }
+  .empty p { margin: .3rem 0; }
+  #pushbar:empty { display: none; }
+  .pushbar {
+    background: #eff6ff; border: 1px solid #bfdbfe; border-radius: 10px;
+    padding: .7rem .9rem; margin-top: 1rem; font-size: .88rem;
+    display: flex; flex-wrap: wrap; align-items: center; gap: .6rem;
+  }
+  .pushbar.on { background: #f0fdf4; border-color: #bbf7d0; }
+  .pushbar .grow { flex: 1 1 auto; min-width: 12rem; color: #57534e; }
+  .pushbar button { font-size: .82rem; padding: .45rem .8rem; }
+  .pushbar button.off { background: transparent; color: #78716c; border: 1px solid #d6d3d1; }
+</style>
+</head>
+<body>
+<main id="app"><p class="muted">불러오는 중…</p></main>
+<div id="pushbar"></div>
+
+<script>
+(function () {
+  var TOKEN_KEY = "aict-me-token";
+  var SEEN_PREFIX = "aict-me-seen:";
+  var app = document.getElementById("app");
+
+  function ls(op, key, val) {
+    try {
+      if (op === "get") return localStorage.getItem(key);
+      if (op === "set") return localStorage.setItem(key, val);
+      if (op === "del") return localStorage.removeItem(key);
+    } catch (e) { return null; }
+  }
+
+  // One-time carry-over from the pre-AICT key names. Without it the rename
+  // would log every student out of this page and mark all their released
+  // feedback unread again, which reads as data loss rather than a rename.
+  (function carryOverLegacyKeys() {
+    try {
+      var LEGACY_TOKEN = "pt-me-token";
+      var LEGACY_SEEN = "pt-me-seen:";
+      var old = localStorage.getItem(LEGACY_TOKEN);
+      if (old && !localStorage.getItem(TOKEN_KEY)) localStorage.setItem(TOKEN_KEY, old);
+      localStorage.removeItem(LEGACY_TOKEN);
+      for (var i = localStorage.length - 1; i >= 0; i--) {
+        var k = localStorage.key(i);
+        if (!k || k.indexOf(LEGACY_SEEN) !== 0) continue;
+        var nk = SEEN_PREFIX + k.slice(LEGACY_SEEN.length);
+        if (!localStorage.getItem(nk)) localStorage.setItem(nk, localStorage.getItem(k));
+        localStorage.removeItem(k);
+      }
+    } catch (e) { /* private mode or blocked storage: nothing to carry over */ }
+  })();
+
+  function el(tag, props, kids) {
+    var n = document.createElement(tag);
+    if (props) for (var k in props) {
+      if (k === "class") n.className = props[k];
+      else if (k === "text") n.textContent = props[k];
+      else n.setAttribute(k, props[k]);
+    }
+    (kids || []).forEach(function (c) { if (c) n.appendChild(c); });
+    return n;
+  }
+
+  function fmtDate(iso) {
+    if (!iso) return "";
+    var d = new Date(iso);
+    if (isNaN(d)) return String(iso).slice(0, 16).replace("T", " ");
+    var p = function (x) { return String(x).padStart(2, "0"); };
+    return d.getFullYear() + "-" + p(d.getMonth() + 1) + "-" + p(d.getDate()) +
+           " " + p(d.getHours()) + ":" + p(d.getMinutes());
+  }
+
+  function clear() { while (app.firstChild) app.removeChild(app.firstChild); }
+
+  function showTokenForm(message) {
+    clear();
+    app.appendChild(el("h1", { text: "내 피드백" }));
+    app.appendChild(el("p", { class: "muted", text:
+      "교수자가 남긴 피드백을 확인하는 페이지입니다. 아무것도 설치할 필요 없이, 제출에 쓰는 토큰만 있으면 됩니다." }));
+    var form = el("form");
+    form.appendChild(el("label", { for: "tok", text: "제출 토큰 (교수자에게 받은, /aict:submit 에 쓰는 그 토큰)" }));
+    var input = el("input", { type: "text", id: "tok", autocomplete: "off",
+      autocapitalize: "off", spellcheck: "false", placeholder: "예: 3f9a…" });
+    form.appendChild(input);
+    if (message) form.appendChild(el("p", { class: "err", text: message }));
+    var btn = el("button", { type: "submit", text: "확인" });
+    form.appendChild(el("div", { class: "row" }, [btn]));
+    form.addEventListener("submit", function (e) {
+      e.preventDefault();
+      var t = input.value.trim();
+      if (!t) return;
+      ls("set", TOKEN_KEY, t);
+      load();
+    });
+    app.appendChild(form);
+    input.focus();
+  }
+
+  function renderEmpty(studentId) {
+    clear();
+    app.appendChild(el("h1", { text: "내 피드백" }));
+    if (studentId) app.appendChild(el("p", { class: "muted", text: studentId + " 님" }));
+    var box = el("div", { class: "card empty" }, [
+      el("p", { text: "아직 도착한 피드백이 없습니다." }),
+      el("p", { class: "muted", text: "교수자가 검토를 마치고 보내면 여기에 표시됩니다." }),
+    ]);
+    app.appendChild(box);
+    app.appendChild(controls());
+    initPush();
+  }
+
+  function controls() {
+    var refresh = el("button", { type: "button", text: "새로고침" });
+    refresh.addEventListener("click", load);
+    var change = el("button", { type: "button", class: "ghost", text: "토큰 변경" });
+    change.addEventListener("click", function () { ls("del", TOKEN_KEY); showTokenForm(); });
+    return el("div", { class: "row" }, [refresh, change]);
+  }
+
+  // ---- Web push opt-in -------------------------------------------------
+  var pushbar = document.getElementById("pushbar");
+
+  function urlB64ToUint8Array(base64) {
+    var padding = "=".repeat((4 - (base64.length % 4)) % 4);
+    var b64 = (base64 + padding).replace(/-/g, "+").replace(/_/g, "/");
+    var raw = atob(b64);
+    var arr = new Uint8Array(raw.length);
+    for (var i = 0; i < raw.length; i++) arr[i] = raw.charCodeAt(i);
+    return arr;
+  }
+
+  function pushSupported() {
+    return "serviceWorker" in navigator && "PushManager" in window && "Notification" in window;
+  }
+
+  function setBar(kids, on) {
+    while (pushbar.firstChild) pushbar.removeChild(pushbar.firstChild);
+    if (!kids) return;
+    var bar = el("div", { class: on ? "pushbar on" : "pushbar" }, kids);
+    pushbar.appendChild(bar);
+  }
+
+  async function initPush() {
+    if (!pushSupported()) return;
+    var token = ls("get", TOKEN_KEY);
+    if (!token) { setBar(null); return; }
+
+    var keyRes = await fetch("/api/vapid-public-key").then(function (r) { return r.ok ? r.json() : null; }).catch(function () { return null; });
+    if (!keyRes || !keyRes.key) { setBar(null); return; } // push not configured on this server
+
+    var reg = await navigator.serviceWorker.register("/sw.js").catch(function () { return null; });
+    if (!reg) { setBar(null); return; }
+    var existing = await reg.pushManager.getSubscription();
+
+    if (existing && Notification.permission === "granted") {
+      var offBtn = el("button", { type: "button", class: "off", text: "알림 끄기" });
+      offBtn.addEventListener("click", async function () {
+        offBtn.disabled = true;
+        try {
+          await fetch("/api/push-subscribe", {
+            method: "DELETE",
+            headers: { Authorization: "Bearer " + token, "content-type": "application/json" },
+            body: JSON.stringify({ endpoint: existing.endpoint }),
+          });
+          await existing.unsubscribe();
+        } catch (e) { /* ignore */ }
+        initPush();
+      });
+      setBar([el("span", { class: "grow", text: "새 피드백 알림이 켜져 있습니다. 이 페이지를 닫아도 알림이 옵니다." }), offBtn], true);
+      return;
+    }
+
+    var onBtn = el("button", { type: "button", text: "🔔 새 피드백 알림 받기" });
+    var note = el("span", { class: "grow", text: "교수자가 피드백을 보내면 이 기기로 알림이 옵니다. (한 번만 허용하면 됩니다)" });
+    onBtn.addEventListener("click", async function () {
+      onBtn.disabled = true;
+      var perm = Notification.permission === "granted" ? "granted" : await Notification.requestPermission();
+      if (perm !== "granted") {
+        note.textContent = "브라우저에서 알림이 차단되어 있습니다. 주소창의 자물쇠 아이콘에서 알림을 허용으로 바꿔 주세요.";
+        onBtn.disabled = false;
+        return;
+      }
+      var appKey;
+      try {
+        appKey = urlB64ToUint8Array(keyRes.key);
+        if (appKey.length !== 65) throw new Error("서버의 VAPID_PUBLIC_KEY 길이가 " + appKey.length + "바이트입니다 (65 필요) — 교수자가 키를 다시 설정하고 재배포해야 합니다.");
+      } catch (e) {
+        console.error("[push] bad applicationServerKey:", e);
+        note.textContent = "알림 키 설정이 잘못되었습니다: " + (e && e.message ? e.message : e);
+        onBtn.disabled = false;
+        return;
+      }
+      try {
+        // A subscription made with a *different* key blocks a new subscribe
+        // (InvalidStateError) — drop it first.
+        var stale = await reg.pushManager.getSubscription();
+        if (stale) { try { await stale.unsubscribe(); } catch (e) { /* ignore */ } }
+        var sub = await reg.pushManager.subscribe({
+          userVisibleOnly: true,
+          applicationServerKey: appKey,
+        });
+        var res = await fetch("/api/push-subscribe", {
+          method: "POST",
+          headers: { Authorization: "Bearer " + token, "content-type": "application/json" },
+          body: JSON.stringify(sub.toJSON ? sub.toJSON() : sub),
+        });
+        if (!res.ok) throw new Error("서버가 구독을 거부했습니다 (HTTP " + res.status + ")");
+      } catch (e) {
+        console.error("[push] subscribe failed:", e);
+        var name = e && e.name ? e.name + ": " : "";
+        note.textContent = "알림 설정에 실패했습니다 — " + name + (e && e.message ? e.message : "잠시 후 다시 시도해 주세요.");
+        onBtn.disabled = false;
+        return;
+      }
+      initPush();
+    });
+    setBar([note, onBtn], false);
+  }
+
+  function commentWhere(a) {
+    if (!a || typeof a !== "object") return "일반 코멘트";
+    if (a.sectionHeading) return a.sectionHeading;
+    if (a.component) {
+      return a.component + (a.version != null ? " · 계획 v" + a.version
+        : a.resultsVersion != null ? " · 결과 r" + a.resultsVersion : "");
+    }
+    var views = { tracker: "트래커", timeline: "타임라인", reports: "리포트",
+      reviews: "리뷰", archive: "아카이브", plans: "분석 계획", results: "산출물·검증" };
+    if (a.view) return views[a.view] || a.view;
+    return "일반 코멘트";
+  }
+
+  function renderComment(c) {
+    var a = c.annotation || {};
+    var node = el("div", { class: "comment" });
+    node.appendChild(el("div", { class: "where", text: commentWhere(a) }));
+    if (a.quote) node.appendChild(el("blockquote", { text: a.quote }));
+    node.appendChild(el("div", { class: "body", text: a.comment || "" }));
+    var by = [c.author || "교수자", fmtDate(c.receivedAt)].filter(Boolean).join(" · ");
+    node.appendChild(el("div", { class: "by", text: by }));
+    return node;
+  }
+
+  function render(data) {
+    var comments = Array.isArray(data.comments) ? data.comments : [];
+    var subs = Array.isArray(data.submissions) ? data.submissions : [];
+    var released = subs
+      .filter(function (s) { return s.releasedAt; })
+      .sort(function (x, y) { return (y.submittedAt || "").localeCompare(x.submittedAt || ""); });
+
+    if (released.length === 0) { renderEmpty(data.studentId); return; }
+
+    clear();
+    app.appendChild(el("h1", { text: "내 피드백" }));
+    app.appendChild(el("p", { class: "muted", text: (data.studentId || "") + " 님" }));
+
+    var newSeen = {};
+    released.forEach(function (s) {
+      var mine = comments.filter(function (c) { return c.shareHash === s.shareHash; })
+        .sort(function (x, y) { return (x.receivedAt || "").localeCompare(y.receivedAt || ""); });
+      var seenAt = ls("get", SEEN_PREFIX + s.shareHash);
+      var isNew = !seenAt || seenAt < s.releasedAt;
+      newSeen[s.shareHash] = s.releasedAt;
+
+      var head = el("div", { class: "sub-head" }, [
+        el("strong", { text: "제출 " + fmtDate(s.submittedAt) }),
+        el("span", { class: "badge done", text: "검토 완료 " + fmtDate(s.releasedAt) }),
+      ]);
+      if (isNew) head.appendChild(el("span", { class: "badge", text: "새 피드백" }));
+
+      var card = el("div", { class: "card" }, [head]);
+      if (mine.length === 0) {
+        card.appendChild(el("p", { class: "muted", text: "이 제출에 대한 코멘트가 없습니다." }));
+      } else {
+        mine.forEach(function (c) { card.appendChild(renderComment(c)); });
+      }
+      app.appendChild(card);
+    });
+
+    var hint = el("div", { class: "card" }, [
+      el("p", { class: "muted", text:
+        "이 피드백을 Claude 세션으로 가져오려면 프로젝트 디렉터리에서 /aict:check 를 실행하세요. 코멘트가 계획·타임라인 위에 그대로 표시됩니다." }),
+    ]);
+    app.appendChild(hint);
+    app.appendChild(controls());
+    initPush();
+
+    // Mark everything shown as seen so the "새 피드백" badge clears on the
+    // next visit (until the instructor sends again, which moves releasedAt).
+    setTimeout(function () {
+      for (var k in newSeen) ls("set", SEEN_PREFIX + k, newSeen[k]);
+    }, 1200);
+  }
+
+  function load() {
+    var token = ls("get", TOKEN_KEY);
+    if (!token) { setBar(null); showTokenForm(); return; }
+    clear();
+    app.appendChild(el("p", { class: "muted", text: "불러오는 중…" }));
+    fetch("/api/my-comments", { headers: { Authorization: "Bearer " + token } })
+      .then(function (r) {
+        if (r.status === 401) { ls("del", TOKEN_KEY); showTokenForm("토큰이 올바르지 않거나 만료되었습니다. 교수자에게 새 토큰을 받아 다시 입력하세요."); return null; }
+        if (!r.ok) throw new Error("HTTP " + r.status);
+        return r.json();
+      })
+      .then(function (data) { if (data) render(data); })
+      .catch(function () {
+        clear();
+        app.appendChild(el("h1", { text: "내 피드백" }));
+        app.appendChild(el("div", { class: "card empty" }, [
+          el("p", { text: "서버에 연결하지 못했습니다." }),
+          el("p", { class: "muted", text: "잠시 후 다시 시도해 주세요." }),
+        ]));
+        app.appendChild(controls());
+      });
+  }
+
+  load();
+})();
+</script>
+</body>
+</html>

@@ -6,7 +6,7 @@
         "hooks": [
           {
             "type": "command",
-            "command": "python3 \"${CLAUDE_PLUGIN_ROOT}/skills/managing-papertrail/scripts/signoff_gate.py\"",
+            "command": "python3 \"${CLAUDE_PLUGIN_ROOT}/skills/managing-aict/scripts/signoff_gate.py\"",
             "timeout": 1800
           }
         ]
@@ -17,7 +17,7 @@
         "hooks": [
           {
             "type": "command",
-            "command": "python3 \"${CLAUDE_PLUGIN_ROOT}/skills/managing-papertrail/scripts/check_update.py\"",
+            "command": "python3 \"${CLAUDE_PLUGIN_ROOT}/skills/managing-aict/scripts/check_update.py\"",
             "timeout": 10
           }
         ]

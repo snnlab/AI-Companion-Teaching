@@ -37,7 +37,7 @@ def test_amendment_v1_denied():
         comp = make_init_component(root)
         _, launched, decision, reason = run_gate(root, comp / "v1.md", AMENDMENT)
         assert decision == "deny"
-        assert "/papertrail:sign" in reason
+        assert "/aict:sign" in reason
         launched.assert_not_called()
 
 
@@ -110,4 +110,4 @@ def test_timeout_persists_stripped_draft():
         assert decision == "deny"
         draft = (comp / ".draft-v1.md").read_text(encoding="utf-8")
         assert sg.parse_trailer(draft)["kind"] == "none"
-        assert "/papertrail:sign" in reason
+        assert "/aict:sign" in reason

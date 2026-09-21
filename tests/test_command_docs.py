@@ -21,7 +21,7 @@ class TestInitPortabilityDocs(unittest.TestCase):
 
         self.assertIn("AskUserQuestion is unavailable", command)
         self.assertIn("create nothing", command)
-        self.assertIn("/papertrail:init Paper type:", command)
+        self.assertIn("/aict:init Paper type:", command)
         for field in ("Paper:", "RQs:", "source=", "rough size=", "sensitivity=",
                       "Course:", "model profile=", "reader detail="):
             self.assertIn(field, command)
@@ -39,7 +39,7 @@ class TestBoardReviewerPortabilityDocs(unittest.TestCase):
 
 class TestSignTransactionDocs(unittest.TestCase):
     def test_sign_reference_names_the_shared_procedures(self):
-        reference = (REPO / "skills" / "managing-papertrail" /
+        reference = (REPO / "skills" / "managing-aict" /
                      "references" / "sign-off.md").read_text(encoding="utf-8")
 
         for heading in ("## The finalization transaction",
@@ -52,7 +52,7 @@ class TestSignTransactionDocs(unittest.TestCase):
     def test_plan_leaves_a_scored_pending_draft(self):
         command = (REPO / "commands" / "plan.md").read_text(encoding="utf-8")
 
-        self.assertIn("draft ready — it signs at /papertrail:execute", command)
+        self.assertIn("draft ready — it signs at /aict:execute", command)
         self.assertIn("link it to the draft path", command)
         self.assertNotIn("--gate-batch", command)
         self.assertNotIn("clicks **Approve**", command)
@@ -92,9 +92,9 @@ class TestSignTransactionDocs(unittest.TestCase):
 
     def test_results_uses_the_governing_canonical_version(self):
         command = (REPO / "commands" / "results.md").read_text(encoding="utf-8")
-        validator = (REPO / "skills" / "managing-papertrail" /
+        validator = (REPO / "skills" / "managing-aict" /
                      "templates" / "agents" /
-                     "pt-results-validator.md").read_text(encoding="utf-8")
+                     "aict-results-validator.md").read_text(encoding="utf-8")
 
         self.assertIn("governing plan version", command)
         self.assertIn("valid signed or amendment trailer", command)

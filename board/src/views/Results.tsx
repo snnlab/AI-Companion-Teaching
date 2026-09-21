@@ -196,7 +196,7 @@ function SummaryOnlyNotice() {
         captured, but the analysis outputs could not be reproduced (common for
         retrospective captures, where outputs were never saved to files). If a
         producing script exists, re-run it and capture again; otherwise run{" "}
-        <code>/papertrail:results</code> and name the output file paths
+        <code>/aict:results</code> and name the output file paths
         directly.
       </p>
     </div>
@@ -365,7 +365,7 @@ export default function Results({
     return (
       <div className="rounded-lg border border-dashed border-stone-300 dark:border-stone-600 bg-white dark:bg-stone-900 p-10 text-center text-sm text-stone-500">
         No results captured yet. Capture a bundle with{" "}
-        <code>/papertrail:results</code>.
+        <code>/aict:results</code>.
       </div>
     );
   }

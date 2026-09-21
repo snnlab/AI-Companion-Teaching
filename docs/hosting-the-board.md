@@ -1,6 +1,6 @@
 # Hosting the board for your collaborators (Vercel)
 
-This page is for sharing your project's board with people who read it in a plain web browser and don't use Claude Code themselves. `/papertrail:board --publish-web` puts a private, password-protected copy of your board on Vercel, a hosting service. Setting it up takes about 20 minutes once. After that, publishing an update takes one click, and a collaborator's whole experience is: open a link, type a password, read, and comment.
+This page is for sharing your project's board with people who read it in a plain web browser and don't use Claude Code themselves. `/aict:board --publish-web` puts a private, password-protected copy of your board on Vercel, a hosting service. Setting it up takes about 20 minutes once. After that, publishing an update takes one click, and a collaborator's whole experience is: open a link, type a password, read, and comment.
 
 The sections below cover, in order: the message to send your collaborators, how to install what you need, what this costs, what to do if something goes wrong, moving to a new computer, what a collaborator actually sees, retiring an old GitHub Pages board if you had one, what happens (and doesn't happen) when you read collaborator comments, and what data this involves.
 
@@ -45,7 +45,7 @@ The rest of this tool only needs Python, which most computers already have. Host
 
 After installing, close and reopen your terminal window (or restart Claude Code) so it picks up the new program.
 
-Once Node is installed, tell Claude Code to run `/papertrail:board --publish-web`. Claude handles most of the setup itself, and pauses at a couple of points to ask you to do something only you can do: log into Vercel in your own terminal window (not inside Claude Code), and choose when to send collaborators the password, separately from the link. See Time and cost below for what to expect.
+Once Node is installed, tell Claude Code to run `/aict:board --publish-web`. Claude handles most of the setup itself, and pauses at a couple of points to ask you to do something only you can do: log into Vercel in your own terminal window (not inside Claude Code), and choose when to send collaborators the password, separately from the link. See Time and cost below for what to expect.
 
 Before the first deploy, enable firewall rate limiting for the login route in your project's Vercel Firewall settings. This setup is required. It is the primary defense against repeated password guesses. Do not publish the board until the rule is enabled.
 

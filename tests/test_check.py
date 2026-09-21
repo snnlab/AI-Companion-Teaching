@@ -1,5 +1,5 @@
 # tests/test_check.py
-"""Tests for check.py (/papertrail:check — fetches + routes instructor
+"""Tests for check.py (/aict:check — fetches + routes instructor
 comments across ALL of the student's own submissions via GET
 /api/my-comments). Mirrors tests/test_board.py's TestPull, which check.py's
 routing pipeline is deliberately modeled on. Run:
@@ -16,7 +16,7 @@ from pathlib import Path
 
 SCRIPTS = (
     Path(__file__).resolve().parents[1]
-    / "skills" / "managing-papertrail" / "scripts"
+    / "skills" / "managing-aict" / "scripts"
 )
 sys.path.insert(0, str(SCRIPTS))
 import check  # noqa: E402
@@ -28,7 +28,7 @@ def make_project(root: Path):
     plans = root / "plans"
     (plans / "execution" / "01-data-prep").mkdir(parents=True)
     (plans / "master-plan.md").write_text(
-        "<!-- papertrail:master-plan -->\n# Test — Master Plan\n\n"
+        "<!-- aict:master-plan -->\n# Test — Master Plan\n\n"
         "## Components\n\n"
         "| # | Analysis step | Status | Execution plan | Outcome / notes | Serves |\n"
         "|---|-----------|--------|----------------|-----------------|--------|\n"
@@ -52,8 +52,8 @@ class TestCheck(unittest.TestCase):
         self._orig_data = os.environ.get("CLAUDE_PLUGIN_DATA")
         self._orig_http_get_json = check._http_get_json
         self._orig_cwd = os.getcwd()
-        self._orig_no_board = os.environ.get("PAPERTRAIL_NO_BOARD")
-        os.environ["PAPERTRAIL_NO_BOARD"] = "1"  # never spawn a real board from a test
+        self._orig_no_board = os.environ.get("AICT_NO_BOARD")
+        os.environ["AICT_NO_BOARD"] = "1"  # never spawn a real board from a test
 
     def tearDown(self):
         if self._orig_data is None:
@@ -61,9 +61,9 @@ class TestCheck(unittest.TestCase):
         else:
             os.environ["CLAUDE_PLUGIN_DATA"] = self._orig_data
         if self._orig_no_board is None:
-            os.environ.pop("PAPERTRAIL_NO_BOARD", None)
+            os.environ.pop("AICT_NO_BOARD", None)
         else:
-            os.environ["PAPERTRAIL_NO_BOARD"] = self._orig_no_board
+            os.environ["AICT_NO_BOARD"] = self._orig_no_board
         check._http_get_json = self._orig_http_get_json
 
     @contextlib.contextmanager
@@ -97,7 +97,7 @@ class TestCheck(unittest.TestCase):
             with contextlib.redirect_stderr(err), self.assertRaises(SystemExit) as cm:
                 check.main()
             self.assertEqual(cm.exception.code, 1)
-            self.assertIn("/papertrail:submit", err.getvalue())
+            self.assertIn("/aict:submit", err.getvalue())
 
     def test_fetch_sends_bearer_token_to_my_comments_endpoint(self):
         with self._project() as root:
@@ -155,8 +155,8 @@ class TestCheck(unittest.TestCase):
             with contextlib.redirect_stdout(out):
                 check.main()
             text = out.getvalue()
-            self.assertIn("[papertrail:check] board-seeds:", text)
-            self.assertIn("[papertrail:check] focus: 02-clpm-fit", text)
+            self.assertIn("[aict:check] board-seeds:", text)
+            self.assertIn("[aict:check] focus: 02-clpm-fit", text)
             seed_path = root / "plans" / check.SEED_FILE_NAME
             self.assertTrue(seed_path.is_file())
             import json as _json
@@ -214,7 +214,7 @@ class TestCheck(unittest.TestCase):
         self.assertEqual(calls[0][1:], (None, None))
 
     def test_no_board_env_suppresses_spawn(self):
-        # open_seed_board is the real one here; PAPERTRAIL_NO_BOARD=1 (setUp)
+        # open_seed_board is the real one here; AICT_NO_BOARD=1 (setUp)
         # must make it a no-op rather than launch board.py.
         with self._project() as root:
             self._configure(root, comments=[self.PLAN_COMMENT])

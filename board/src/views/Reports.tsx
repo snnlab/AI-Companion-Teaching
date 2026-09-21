@@ -135,7 +135,7 @@ export default function Reports({
     return (
       <div className="rounded-lg border border-dashed border-stone-300 dark:border-stone-600 bg-white dark:bg-stone-900 p-10 text-center text-sm text-stone-500">
         No reports yet — generate one from a results bundle: capture with{" "}
-        <code>/papertrail:results</code>, then use its report offer or the
+        <code>/aict:results</code>, then use its report offer or the
         Generate report button.
       </div>
     );
