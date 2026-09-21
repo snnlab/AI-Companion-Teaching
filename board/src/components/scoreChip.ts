@@ -1,5 +1,5 @@
-// 0..3 colour ramp shared by ScorePanel (plan scorecards) and OutputScorePanel
-// (bundle F·A·I score). A 0 reads as a hard gap and gets the alarm colour;
+// 0..3 colour ramp for ScorePanel (plan scorecards).
+// A 0 reads as a hard gap and gets the alarm colour;
 // null (underivable channel) is muted, not alarming.
 export function chipClass(score: number | null): string {
   if (score === null)

@@ -2,18 +2,15 @@
 // (Phase 2 — see plans/master-plan.md "Instructor-hosted roster server").
 // Deliberately separate from BoardData (./types.ts): BoardData describes ONE
 // student's project (unchanged by this file); RosterData describes a COURSE
-// across many students. The two are related only through `OutputScore`,
-// reused verbatim (not redefined) so the roster's F·A·I chip can share
-// exactly the same rendering code (OutputScorePanel) as the single-project
-// board, and through `payload`, which — once a row is drilled into — IS a
-// full, valid BoardData, unmodified.
+// across many students. The two are related through `payload`, which — once
+// a row is drilled into — IS a full, valid BoardData, unmodified.
 //
 // These shapes are shared with the classroom server implementation (a
 // parallel, separate piece of work) and with skills/managing-aict's
 // submit.py envelope. Do not change field names/shapes here without
 // reconciling both sides.
 
-import type { BoardData, OutputScore } from "./types";
+import type { BoardData } from "./types";
 
 export interface RosterData {
   schemaVersion: number;
@@ -25,22 +22,10 @@ export interface RosterData {
   students: RosterRow[];
 }
 
-// Server-side mechanical re-verification checks (reverify.ts): each entry is
-// ONE named check (checksum recompute, trailer re-parse, sign-off-vs-git
-// timing, …) with its own verdict. `match`/`mismatch` cover checks the server
-// could fully recompute; `not-derivable` covers checks that had nothing to
-// compare against (e.g. no git excerpt submitted); `flag` covers a descriptive
-// signal worth a look (e.g. a timing anomaly) that isn't a binary pass/fail.
-// Always render these with their own visual language — see
-// components/TrustTierLegend.tsx — never the integrity block's pass/fail
-// red/green vocabulary.
-export type ReverifyStatus = "match" | "mismatch" | "not-derivable" | "flag";
-
-export interface ReverifyCheck {
-  check: string;
-  status: ReverifyStatus;
-  detail: string;
-}
+// The server still runs its mechanical re-verification on every submission
+// and returns it from POST /api/submissions — submit.py prints it for the
+// student. It is deliberately NOT part of the roster wire contract: the
+// roster screen does not render it, so aggregating it per row was dead work.
 
 // Mirrors IntegrityBlock["status"] in ./types.ts plus "unknown" for a
 // submission the server hasn't (yet) run its mechanical pass against.
@@ -49,15 +34,7 @@ export type RosterIntegrityStatus = "passed" | "failed" | "unknown";
 export interface RosterSubmissionSummary {
   submittedAt: string;
   idempotencyKey: string;
-  score: OutputScore | null;
   integrityStatus: RosterIntegrityStatus;
-  reverify: ReverifyCheck[];
-}
-
-export interface SimilarityFlag {
-  withStudentId: string;
-  jaccard: number;
-  artifact: string;
 }
 
 export interface RosterRow {
@@ -66,7 +43,6 @@ export interface RosterRow {
   // null = registered but never submitted yet.
   lastSubmission: RosterSubmissionSummary | null;
   submissionCount: number;
-  similarityFlags: SimilarityFlag[];
   // True when lastSubmission postdates the instructor's previous roster
   // visit (server-computed from a single last-viewed pointer — see
   // classroom-template's lib/roster.ts). Optional so older cached payloads
@@ -79,8 +55,6 @@ export interface RosterRow {
 export interface StudentSubmission {
   submittedAt: string;
   idempotencyKey: string;
-  reverify: ReverifyCheck[];
-  score: OutputScore | null;
   integrityStatus: RosterIntegrityStatus;
   // Full, valid BoardData — the exact shape App.tsx already renders today.
   payload: BoardData;

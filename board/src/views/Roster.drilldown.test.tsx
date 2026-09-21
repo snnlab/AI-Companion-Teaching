@@ -35,10 +35,7 @@ function roster(): RosterData {
           submittedAt: "2026-08-19T14:30",
           idempotencyKey: "k1",
           integrityStatus: "passed",
-          score: null,
-          reverify: [],
         },
-        similarityFlags: [],
       },
     ],
   };
@@ -69,9 +66,7 @@ function submissions(): StudentSubmissions {
       {
         submittedAt: "2026-08-19T14:30",
         idempotencyKey: "k1",
-        reverify: [],
-        score: null,
-        integrityStatus: "passed",
+          integrityStatus: "passed",
         payload: studentBoardData(),
       },
     ],

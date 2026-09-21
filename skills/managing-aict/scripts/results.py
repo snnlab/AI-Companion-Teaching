@@ -260,104 +260,6 @@ def compute_integrity(manifest, staging, now=None):
     }
 
 
-# Verdict tiers for the mechanical F/A channels, worst first. Unknown verdicts
-# are ignored for ranking and noted in the basis.
-_STEP_TIERS = (
-    (("deviated-unrecorded", "not-executed"), 0),
-    (("unverifiable",), 1),
-    (("amended",), 2),
-)
-_CRITERION_TIERS = (
-    (("not-met",), 0),
-    (("unverifiable",), 1),
-    (("partial",), 2),
-)
-# Integrity check severity: worst failing check sets the score directly.
-_INTEGRITY_RANK = {"checksums": 0, "artifacts-present": 0,
-                   "artifact-refs": 1, "findings-sourced": 2}
-
-
-def _verdict_channel(items, label_key, tiers, best_verdict, noun):
-    """Score one verdict-list channel. Returns (score-or-None, basis)."""
-    if not isinstance(items, list) or not items:
-        return None, "no %s recorded" % noun
-    recognized = {best_verdict} | {v for vs, _ in tiers for v in vs}
-    unknown = sorted({str(it.get("verdict")) for it in items
-                      if it.get("verdict") not in recognized})
-    scored = [it for it in items if it.get("verdict") in recognized]
-    note = ("; ignored unknown verdicts: %s" % ", ".join(unknown)) if unknown else ""
-    if not scored:
-        return None, "no recognizable verdicts%s" % note
-    for verdicts, score in tiers:
-        hits = [it for it in scored if it.get("verdict") in verdicts]
-        if hits:
-            first = str(hits[0].get(label_key) or "?")
-            return score, "%d %s %s, first: '%s'%s" % (
-                len(hits), noun, "/".join(verdicts), first, note)
-    return 3, "all %d %s %s%s" % (len(scored), noun, best_verdict, note)
-
-
-def _integrity_channel(integrity):
-    if not isinstance(integrity, dict):
-        return None, "no integrity block"
-    checks = integrity.get("checks")
-    if not isinstance(checks, list) or not checks:
-        return None, "no integrity checks recorded"
-    fails = [c for c in checks if c.get("verdict") == "fail"]
-    known_fails = [c for c in fails if c.get("name") in _INTEGRITY_RANK]
-    unknown = sorted({str(c.get("name")) for c in checks
-                      if c.get("name") not in _INTEGRITY_RANK})
-    note = ("; ignored unknown checks: %s" % ", ".join(unknown)) if unknown else ""
-    status = integrity.get("status")
-    expected = "failed" if fails else "passed"
-    disagree = ("; note: recorded status '%s' disagrees with the checks" % status
-                if status in ("passed", "failed") and status != expected else "")
-    if not known_fails:
-        base = ("all %d checks pass" % len(checks) if not fails
-                else "no recognized check failed")
-        return 3, base + note + disagree
-    score = min(_INTEGRITY_RANK[c.get("name")] for c in known_fails)
-    worst = [c for c in known_fails if _INTEGRITY_RANK[c.get("name")] == score]
-    names = ", ".join(sorted({str(c.get("name")) for c in worst}))
-    first_detail = str(worst[0].get("detail") or "").strip()
-    detail = " — %s" % first_detail if first_detail else ""
-    return score, "%d check(s) failed: %s%s%s%s" % (
-        len(worst), names, detail, note, disagree)
-
-
-def compute_score(validation, integrity, now=None):
-    """Mechanical F·A·I output score sealed into the manifest at finalize.
-    Pure arithmetic over the sealed validation verdicts and integrity checks —
-    no additional agent call (the verdicts themselves come from the validator
-    that ran at capture). Advisory: never blocks finalize. Deterministic given
-    `now` (same injection pattern as compute_integrity)."""
-    val = validation if isinstance(validation, dict) else None
-    status = val.get("status") if val else None
-    if val is None:
-        f = a = (None, "no validation block")
-    elif status in ("not-applicable", "skipped"):
-        reason = "retrofit" if status == "not-applicable" else "skipped"
-        f = a = (None, "no plan validation (%s)" % reason)
-    else:
-        f = _verdict_channel(val.get("steps"), "planStep", _STEP_TIERS,
-                             "followed", "steps")
-        a = _verdict_channel(val.get("criteria"), "criterion", _CRITERION_TIERS,
-                             "met", "criteria")
-    i = _integrity_channel(integrity)
-    channels = [
-        {"id": "fidelity", "name": "Fidelity", "score": f[0], "basis": f[1]},
-        {"id": "attainment", "name": "Attainment", "score": a[0], "basis": a[1]},
-        {"id": "integrity", "name": "Integrity", "score": i[0], "basis": i[1]},
-    ]
-    scores = [c["score"] for c in channels]
-    total = sum(scores) if all(isinstance(s, int) for s in scores) else None
-    profile = "·".join("%s%s" % (letter, s if s is not None else "–")
-                       for letter, s in zip("FAI", scores))
-    return {"schemaVersion": 1, "channels": channels, "profile": profile,
-            "total": total, "max": 9,
-            "computedAt": now or datetime.datetime.now().strftime("%Y-%m-%d %H:%M")}
-
-
 def validate_staged(staging):
     manifest_p = staging / "manifest.json"
     if not manifest_p.is_file():
@@ -468,11 +370,6 @@ def cmd_finalize(root, args):
     # Seal the mechanical integrity pass into the immutable manifest. Advisory:
     # a "failed" verdict is recorded and surfaced on the board, never blocks.
     manifest["integrity"] = compute_integrity(manifest, staging)
-    # Seal the mechanical F·A·I output score, derived from the validation
-    # verdicts and the integrity checks just sealed. Diagnostic, never a gate;
-    # any stale staged `score` is replaced unconditionally.
-    manifest["score"] = compute_score(manifest.get("validation"),
-                                      manifest["integrity"])
     (staging / "manifest.json").write_text(
         json.dumps(manifest, indent=1), encoding="utf-8")
     target = results_dir / ("r%d" % version)

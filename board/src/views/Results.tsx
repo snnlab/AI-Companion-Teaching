@@ -8,9 +8,7 @@ import AnnotationLayer, {
 } from "../components/AnnotationLayer";
 import ReviewMenu from "../components/ReviewMenu";
 import ModelChip from "../components/ModelChip";
-import OutputScorePanel from "../components/OutputScorePanel";
 import { coerceModelUsage } from "../lib/modelUsage";
-import { coerceOutputScore } from "../lib/outputScore";
 import { Notice } from "./Tracker";
 import { parseExecutionPlan, preRenewalSlugs } from "../lib/parse";
 import type { ViewerRequest } from "../lib/artifactDisplay";
@@ -372,7 +370,6 @@ export default function Results({
 
   const m = bundle.manifest;
   const badge = bundleStateBadge(bundle);
-  const outputScore = m?.score ? coerceOutputScore(m.score) : null;
 
   // Drag-select anywhere in the bundle body; the stamped scope routes the
   // comment to its structured target (metric / artifact / report).
@@ -504,12 +501,6 @@ export default function Results({
           <span className="text-sm font-semibold">
             {group.component} r{bundle.resultsVersion} — {badge.label}
           </span>
-          {outputScore && (
-            <OutputScorePanel
-              score={outputScore}
-              sections={{ validation: !!m?.validation, integrity: true }}
-            />
-          )}
           {bundle.verdict && (
             <span className="text-xs">
               legacy verdict: {bundle.verdict.status} · {bundle.verdict.reviewer} · {bundle.verdict.date}

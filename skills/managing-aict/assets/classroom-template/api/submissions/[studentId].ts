@@ -31,15 +31,12 @@ export async function run(
   const stored = await listSubmissionsForStudent(blobToken, studentId); // already newest-first
   const submissions = stored.map((s) => {
     const manifest = findFreshestManifest(s.payload);
-    const score = manifest && isRecord(manifest.score) ? manifest.score : null;
     const integrityStatus = manifest && isRecord(manifest.integrity) && typeof manifest.integrity.status === "string"
       ? (manifest.integrity.status as "passed" | "failed")
       : "unknown";
     return {
       submittedAt: s.submittedAt,
       idempotencyKey: s.idempotencyKey,
-      reverify: s.reverify,
-      score,
       integrityStatus,
       payload: s.payload,
     };

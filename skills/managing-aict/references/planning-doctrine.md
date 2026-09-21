@@ -12,7 +12,7 @@ Every proposed default rests on an assumption. When presenting options for a con
 
 ## Evidence discipline — write success criteria that capture can test
 
-At capture time the bundle's validation audits the plan's success criteria against artifacts, and the sealed F·A·I score derives from those verdicts. So criteria must be checkable against evidence that will exist: named outputs, thresholds, tests a third party could run. A criterion validation cannot test is a criterion the plan does not really have (rubric channel 4 scores this). The Verification section is the bridge: it says what artifact or check will show each criterion was met, and CLAUDE.md rule 9's `logs/` capture is where run evidence lands along the way.
+At capture time the bundle's validation audits the plan's success criteria against artifacts. So criteria must be checkable against evidence that will exist: named outputs, thresholds, tests a third party could run. A criterion validation cannot test is a criterion the plan does not really have (rubric channel 4 scores this). The Verification section is the bridge: it says what artifact or check will show each criterion was met, and CLAUDE.md rule 9's `logs/` capture is where run evidence lands along the way.
 
 ## Simplicity and surgical scope
 

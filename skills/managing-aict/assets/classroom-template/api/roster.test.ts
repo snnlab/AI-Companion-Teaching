@@ -40,7 +40,7 @@ describe("GET /api/roster", () => {
 
   it("returns an empty roster when no students are registered", async () => {
     list.mockResolvedValue({ blobs: [], hasMore: false });
-    get.mockResolvedValue(null); // similarity cache miss
+    get.mockResolvedValue(null);
     const r = await run("GET", authedHeaders(), undefined, ENV, NOW);
     expect(r.status).toBe(200);
     const body = r.json as Record<string, unknown>;
@@ -67,7 +67,7 @@ describe("GET /api/roster", () => {
       if (pathname === "roster/alice.json") {
         return { statusCode: 200, stream: streamOf({ studentId: "alice", displayName: "Alice", tokenHash: "h", createdAt: "x" }) };
       }
-      return null; // no _latest.json pointer, no similarity cache
+      return null; // no _latest.json pointer
     });
     const r = await run("GET", authedHeaders(), undefined, ENV, NOW);
     const body = r.json as { students: Record<string, unknown>[] };
@@ -75,20 +75,11 @@ describe("GET /api/roster", () => {
     expect(body.students[0]).toMatchObject({ studentId: "alice", displayName: "Alice", lastSubmission: null, submissionCount: 0 });
   });
 
-  it("surfaces the freshest results manifest's score/integrityStatus and each student's similarity flags", async () => {
+  it("surfaces the freshest results manifest's integrityStatus", async () => {
     list.mockResolvedValueOnce({ blobs: [{ pathname: "roster/alice.json" }], hasMore: false }); // listRoster
     get.mockImplementation(async (pathname: string) => {
       if (pathname === "roster/alice.json") {
         return { statusCode: 200, stream: streamOf({ studentId: "alice", displayName: "Alice", tokenHash: "h", createdAt: "x" }) };
-      }
-      if (pathname === "similarity/latest.json") {
-        return {
-          statusCode: 200,
-          stream: streamOf({
-            checkedAt: "2026-08-20T00:00:00.000Z",
-            flags: [{ studentA: "alice", studentB: "bob", artifact: "decision-log", jaccard: 0.5, sharedShingleCount: 3, sampleSharedPhrase: "x" }],
-          }),
-        };
       }
       if (pathname === "submissions/alice/_latest.json") {
         return { statusCode: 200, stream: streamOf({ idempotencyKey: "key1", submittedAt: "2026-08-19T00:00:00.000Z" }) };
@@ -101,7 +92,7 @@ describe("GET /api/roster", () => {
             payload: {
               files: {
                 executionPlans: [
-                  { component: "01-x", results: [{ manifest: { capturedAt: "2026-08-18 10:00", score: { profile: "F3·A3·I3" }, integrity: { status: "passed" } } }] },
+                  { component: "01-x", results: [{ manifest: { capturedAt: "2026-08-18 10:00", integrity: { status: "passed" } } }] },
                 ],
               },
             },
@@ -115,9 +106,7 @@ describe("GET /api/roster", () => {
     const r = await run("GET", authedHeaders(), undefined, ENV, NOW);
     const body = r.json as { students: Record<string, unknown>[] };
     const row = body.students[0];
-    expect((row.lastSubmission as Record<string, unknown>).score).toEqual({ profile: "F3·A3·I3" });
     expect((row.lastSubmission as Record<string, unknown>).integrityStatus).toBe("passed");
-    expect(row.similarityFlags).toEqual([{ withStudentId: "bob", jaccard: 0.5, artifact: "decision-log" }]);
     expect(row.submissionCount).toBe(1);
   });
 

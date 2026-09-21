@@ -2,7 +2,7 @@
 // POST /api/submissions before storing. Four checks, run in order, each
 // appending zero or more entries to a flat `ReverifyCheck[]`:
 //
-//   1. integrity/score recompute   — results.py's compute_integrity/compute_score
+//   1. integrity recompute         — results.py's compute_integrity
 //   2. trailer canonicalization    — signoff_gate.py's parse_trailer
 //   3. git-timing                  — new this round (gitExcerpt vs. trailer date)
 //   4. missing-expected-artifact   — the low-Decisions sign-off override line
@@ -182,123 +182,6 @@ export function computeIntegrity(
   return { status, checkedAt: now ?? new Date().toISOString(), checks };
 }
 
-export interface ScoreChannel {
-  id: "fidelity" | "attainment" | "integrity";
-  name: string;
-  score: number | null;
-  basis: string;
-}
-export interface ScoreResult {
-  schemaVersion: number;
-  channels: ScoreChannel[];
-  profile: string;
-  total: number | null;
-  max: number;
-  computedAt: string;
-}
-
-type Tier = [string[], number];
-const STEP_TIERS: Tier[] = [
-  [["deviated-unrecorded", "not-executed"], 0],
-  [["unverifiable"], 1],
-  [["amended"], 2],
-];
-const CRITERION_TIERS: Tier[] = [
-  [["not-met"], 0],
-  [["unverifiable"], 1],
-  [["partial"], 2],
-];
-const INTEGRITY_RANK: Record<string, number> = {
-  checksums: 0,
-  "artifacts-present": 0,
-  "artifact-refs": 1,
-  "findings-sourced": 2,
-};
-
-function verdictChannel(
-  items: unknown,
-  labelKey: string,
-  tiers: Tier[],
-  bestVerdict: string,
-  noun: string,
-): [number | null, string] {
-  const list = Array.isArray(items) ? items.filter(isRecord) : null;
-  if (!list || list.length === 0) return [null, `no ${noun} recorded`];
-  const recognized = new Set<string>([bestVerdict, ...tiers.flatMap(([vs]) => vs)]);
-  const unknown = Array.from(
-    new Set(list.map((it) => String(it.verdict)).filter((v) => !recognized.has(v))),
-  ).sort();
-  const scored = list.filter((it) => recognized.has(String(it.verdict)));
-  const note = unknown.length > 0 ? `; ignored unknown verdicts: ${unknown.join(", ")}` : "";
-  if (scored.length === 0) return [null, `no recognizable verdicts${note}`];
-  for (const [verdicts, score] of tiers) {
-    const hits = scored.filter((it) => verdicts.includes(String(it.verdict)));
-    if (hits.length > 0) {
-      const first = str(hits[0][labelKey]) ?? "?";
-      return [score, `${hits.length} ${noun} ${verdicts.join("/")}, first: '${first}'${note}`];
-    }
-  }
-  return [3, `all ${scored.length} ${noun} ${bestVerdict}${note}`];
-}
-
-function integrityChannel(integrity: unknown): [number | null, string] {
-  if (!isRecord(integrity)) return [null, "no integrity block"];
-  const checks = Array.isArray(integrity.checks) ? integrity.checks.filter(isRecord) : null;
-  if (!checks || checks.length === 0) return [null, "no integrity checks recorded"];
-  const fails = checks.filter((c) => c.verdict === "fail");
-  const knownFails = fails.filter((c) => typeof c.name === "string" && c.name in INTEGRITY_RANK);
-  const unknown = Array.from(
-    new Set(checks.map((c) => String(c.name)).filter((n) => !(n in INTEGRITY_RANK))),
-  ).sort();
-  const note = unknown.length > 0 ? `; ignored unknown checks: ${unknown.join(", ")}` : "";
-  const status = str(integrity.status);
-  const expected = fails.length > 0 ? "failed" : "passed";
-  const disagree = (status === "passed" || status === "failed") && status !== expected
-    ? `; note: recorded status '${status}' disagrees with the checks`
-    : "";
-  if (knownFails.length === 0) {
-    const base = fails.length === 0 ? `all ${checks.length} checks pass` : "no recognized check failed";
-    return [3, base + note + disagree];
-  }
-  const score = Math.min(...knownFails.map((c) => INTEGRITY_RANK[String(c.name)]));
-  const worst = knownFails.filter((c) => INTEGRITY_RANK[String(c.name)] === score);
-  const names = Array.from(new Set(worst.map((c) => String(c.name)))).sort().join(", ");
-  const firstDetail = (str(worst[0].detail) ?? "").trim();
-  const detail = firstDetail ? ` — ${firstDetail}` : "";
-  return [score, `${worst.length} check(s) failed: ${names}${detail}${note}${disagree}`];
-}
-
-export function computeScore(validation: unknown, integrity: unknown, now?: string): ScoreResult {
-  const val = isRecord(validation) ? validation : null;
-  const status = val ? str(val.status) : null;
-  let f: [number | null, string];
-  let a: [number | null, string];
-  if (val === null) {
-    f = [null, "no validation block"];
-    a = [null, "no validation block"];
-  } else if (status === "not-applicable" || status === "skipped") {
-    const reason = status === "not-applicable" ? "retrofit" : "skipped";
-    f = [null, `no plan validation (${reason})`];
-    a = [null, `no plan validation (${reason})`];
-  } else {
-    f = verdictChannel(val.steps, "planStep", STEP_TIERS, "followed", "steps");
-    a = verdictChannel(val.criteria, "criterion", CRITERION_TIERS, "met", "criteria");
-  }
-  const i = integrityChannel(integrity);
-  const channels: ScoreChannel[] = [
-    { id: "fidelity", name: "Fidelity", score: f[0], basis: f[1] },
-    { id: "attainment", name: "Attainment", score: a[0], basis: a[1] },
-    { id: "integrity", name: "Integrity", score: i[0], basis: i[1] },
-  ];
-  const scores = channels.map((c) => c.score);
-  const total = scores.every((s) => typeof s === "number")
-    ? (scores as number[]).reduce((x, y) => x + y, 0)
-    : null;
-  const letters = ["F", "A", "I"];
-  const profile = channels.map((c, idx) => `${letters[idx]}${c.score === null ? "–" : c.score}`).join("·");
-  return { schemaVersion: 1, channels, profile, total, max: 9, computedAt: now ?? new Date().toISOString() };
-}
-
 function integrityEquivalent(recomputed: IntegrityResult, sealed: unknown): boolean {
   // Compares status + per-check {name, verdict} only — not the free-text
   // `detail` or `checkedAt` — so a re-verification never false-flags on
@@ -314,12 +197,6 @@ function integrityEquivalent(recomputed: IntegrityResult, sealed: unknown): bool
     if (str(y.name) !== x.name || str(y.verdict) !== x.verdict) return false;
   }
   return true;
-}
-
-function scoreEquivalent(recomputed: ScoreResult, sealed: unknown): boolean {
-  if (!isRecord(sealed)) return false;
-  const sealedTotal = typeof sealed.total === "number" ? sealed.total : null;
-  return str(sealed.profile) === recomputed.profile && sealedTotal === recomputed.total;
 }
 
 function reverifyResultsBundles(
@@ -363,29 +240,6 @@ function reverifyResultsBundles(
           check: `integrity:${label}`,
           status: "mismatch",
           detail: `recomputed integrity (${recomputedIntegrity.status}) differs from the sealed manifest for ${label} — the manifest may have been edited after it was sealed.`,
-        });
-      }
-
-      const recomputedScore = computeScore(manifest.validation, recomputedIntegrity);
-      const sealedScore = manifest.score;
-      if (sealedScore === undefined || sealedScore === null) {
-        out.push({
-          check: `score:${label}`,
-          status: "not-derivable",
-          detail: `${label} carries no sealed score block to compare against; recomputed profile is ${recomputedScore.profile}.`,
-        });
-      } else if (scoreEquivalent(recomputedScore, sealedScore)) {
-        out.push({
-          check: `score:${label}`,
-          status: "match",
-          detail: `recomputed score (${recomputedScore.profile}) matches the sealed manifest.`,
-        });
-      } else {
-        const sealedProfile = isRecord(sealedScore) ? str(sealedScore.profile) ?? "?" : "?";
-        out.push({
-          check: `score:${label}`,
-          status: "mismatch",
-          detail: `recomputed score (${recomputedScore.profile}) differs from the sealed manifest score (${sealedProfile}) for ${label} — worth asking about.`,
         });
       }
     }

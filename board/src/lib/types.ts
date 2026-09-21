@@ -184,7 +184,6 @@ export interface ResultsManifest {
   validation?: ValidationBlock; // v0.10: plan-vs-execution audit, sealed at capture
   modelUsage?: ModelUsage; // which model captured this bundle (reported = capture session)
   integrity?: IntegrityBlock; // mechanical integrity pass, sealed at finalize
-  score?: OutputScore; // mechanical F·A·I score, sealed at finalize
 }
 
 // Mechanical, advisory integrity pass computed by results.py at finalize and
@@ -198,28 +197,6 @@ export interface IntegrityBlock {
     verdict: "pass" | "fail";
     detail?: string;
   }[];
-}
-
-// Mechanical F·A·I output score sealed by results.py at finalize — derived
-// from the validation verdicts and integrity checks, not an independent
-// measurement. Absent on bundles finalized before this feature. Diagnostic,
-// never a gate. Channels are fixed: fidelity, attainment, integrity.
-export type OutputScoreChannelId = "fidelity" | "attainment" | "integrity";
-
-export interface OutputScoreChannel {
-  id: OutputScoreChannelId;
-  name: string;
-  score: number | null; // integer 0–3, or null when underivable
-  basis?: string;
-}
-
-export interface OutputScore {
-  schemaVersion: number;
-  channels: OutputScoreChannel[];
-  profile: string; // e.g. "F3·A2·I3", "–" for null channels
-  total: number | null;
-  max: number;
-  computedAt?: string;
 }
 
 // Independent-subagent audit of the bundle against its signed plan (v0.10).

@@ -10,7 +10,6 @@ import { hasSubstantiveFindings } from "../lib/findings";
 import type { OutlineEntry } from "../lib/outline";
 import type { ActiveFileRef } from "../lib/filesTree";
 import { bundleState, bundleStateMark } from "../lib/bundleState";
-import { coerceOutputScore } from "../lib/outputScore";
 import type {
   Annotation,
   BoardData,
@@ -529,9 +528,6 @@ export default function Tracker({
                       if (!latestResult)
                         return <span className="text-xs text-stone-400 dark:text-stone-500">—</span>;
                       const mark = bundleStateMark(latestResult).trim();
-                      const sc = latestResult.manifest?.score
-                        ? coerceOutputScore(latestResult.manifest.score)
-                        : null;
                       return (
                         <span className="inline-flex items-center gap-1.5">
                           <button
@@ -540,14 +536,6 @@ export default function Tracker({
                           >
                             r{latestResult.resultsVersion} {mark}
                           </button>
-                          {sc && (
-                            <span
-                              className="text-[11px] text-stone-500 tabular-nums"
-                              title={`output score ${sc.total ?? "–"}/${sc.max}`}
-                            >
-                              {sc.profile}
-                            </span>
-                          )}
                         </span>
                       );
                     })()}

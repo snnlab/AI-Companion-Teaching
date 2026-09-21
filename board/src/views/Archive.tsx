@@ -6,7 +6,6 @@ import AnnotationLayer, {
 } from "../components/AnnotationLayer";
 import { Notice } from "./Tracker";
 import { parseMasterPlan, parseServes, slugFromLink } from "../lib/parse";
-import { coerceOutputScore } from "../lib/outputScore";
 import type { OutlineEntry } from "../lib/outline";
 import type {
   Annotation,
@@ -218,19 +217,6 @@ export default function Archive({
                             >
                               r{latest.resultsVersion}
                             </button>
-                            {(() => {
-                              const sc = latest.manifest?.score
-                                ? coerceOutputScore(latest.manifest.score)
-                                : null;
-                              return sc ? (
-                                <span
-                                  className="text-[11px] text-stone-500 tabular-nums"
-                                  title={`output score ${sc.total ?? "–"}/${sc.max}`}
-                                >
-                                  {sc.profile}
-                                </span>
-                              ) : null;
-                            })()}
                             {(() => {
                               const withReport = [...(g?.results ?? [])]
                                 .reverse()

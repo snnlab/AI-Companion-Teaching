@@ -7,7 +7,6 @@ import {
   parseTrailer,
   normalizePlan,
   computeIntegrity,
-  computeScore,
   reverifySubmission,
   findFreshestManifest,
 } from "./reverify";
@@ -94,8 +93,7 @@ describe("normalizePlan", () => {
 });
 
 // ---------------------------------------------------------------------------
-// Check 1: integrity/score recompute (ported results.py compute_integrity /
-// compute_score).
+// Check 1: integrity recompute (ported results.py compute_integrity).
 // ---------------------------------------------------------------------------
 
 function dataUri(bytes: Buffer): string {
@@ -155,45 +153,6 @@ describe("computeIntegrity", () => {
     const manifest = { artifacts: [], metrics: [{ label: "m1", status: "descriptive", statement: "just a note" }] };
     const result = computeIntegrity(manifest, {});
     expect(result.checks.find((c) => c.name === "findings-sourced")?.verdict).toBe("pass");
-  });
-});
-
-describe("computeScore", () => {
-  it("returns null channels with 'no validation block' when validation is absent", () => {
-    const result = computeScore(undefined, { status: "passed", checks: [] });
-    expect(result.channels[0].score).toBeNull();
-    expect(result.channels[1].score).toBeNull();
-    expect(result.total).toBeNull();
-  });
-  it("scores fidelity/attainment 3 when every step/criterion is best-verdict", () => {
-    const validation = {
-      status: "conforms",
-      steps: [{ planStep: "s1", verdict: "followed" }],
-      criteria: [{ criterion: "c1", verdict: "met" }],
-    };
-    const result = computeScore(validation, { status: "passed", checks: [{ name: "checksums", verdict: "pass" }] });
-    expect(result.channels.find((c) => c.id === "fidelity")?.score).toBe(3);
-    expect(result.channels.find((c) => c.id === "attainment")?.score).toBe(3);
-    expect(result.channels.find((c) => c.id === "integrity")?.score).toBe(3);
-    expect(result.total).toBe(9);
-    expect(result.profile).toBe("F3·A3·I3");
-  });
-  it("takes the worst tier when a deviated-unrecorded step is present", () => {
-    const validation = { status: "deviations-found", steps: [{ planStep: "s1", verdict: "deviated-unrecorded" }] };
-    const result = computeScore(validation, { status: "passed", checks: [] });
-    expect(result.channels.find((c) => c.id === "fidelity")?.score).toBe(0);
-  });
-  it("scores integrity by the worst-ranked failing check", () => {
-    const integrity = {
-      status: "failed",
-      checks: [
-        { name: "checksums", verdict: "fail" },
-        { name: "findings-sourced", verdict: "fail" },
-      ],
-    };
-    const result = computeScore(undefined, integrity);
-    // checksums ranks 0, findings-sourced ranks 2 — worst (lowest) wins.
-    expect(result.channels.find((c) => c.id === "integrity")?.score).toBe(0);
   });
 });
 

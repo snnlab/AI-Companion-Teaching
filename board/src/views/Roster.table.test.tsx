@@ -20,10 +20,7 @@ function data(): RosterData {
           submittedAt: "2026-08-19T14:30",
           idempotencyKey: "k1",
           integrityStatus: "passed",
-          score: null,
-          reverify: [],
         },
-        similarityFlags: [],
         isNewSinceLastView: true,
       },
       {
@@ -34,17 +31,13 @@ function data(): RosterData {
           submittedAt: "2026-08-18T09:00",
           idempotencyKey: "k2",
           integrityStatus: "failed",
-          score: null,
-          reverify: [],
         },
-        similarityFlags: [],
       },
       {
         studentId: "s-cora",
         displayName: "Cora",
         submissionCount: 0,
         lastSubmission: null,
-        similarityFlags: [],
       },
     ],
   };

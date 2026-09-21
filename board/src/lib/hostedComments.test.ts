@@ -176,11 +176,11 @@ describe("per-document staleness", () => {
     expect(targetHash(bundleChanged, annotation)).not.toBe(docHash);
   });
 
-  it("result targetHash changes with manifest.score but not with publishedReport", () => {
+  it("result targetHash changes with manifest.integrity but not with publishedReport", () => {
     const annotation = resultComment(1);
     const base = resultsBundle(1, "manifest-v1");
     const baseHash = targetHash(boardWith("original", [base]), annotation);
-    const withScore: ResultsBundle = {
+    const withIntegrity: ResultsBundle = {
       ...base,
       manifest: {
         schemaVersion: 1,
@@ -192,21 +192,14 @@ describe("per-document staleness", () => {
         capturedAt: "t",
         metrics: [],
         artifacts: [],
-        score: {
-          schemaVersion: 1,
-          channels: [
-            { id: "fidelity", name: "Fidelity", score: 3, basis: "all followed" },
-            { id: "attainment", name: "Attainment", score: 3, basis: "all met" },
-            { id: "integrity", name: "Integrity", score: 3, basis: "all pass" },
-          ],
-          profile: "F3·A3·I3",
-          total: 9,
-          max: 9,
-          computedAt: "t",
+        integrity: {
+          status: "passed" as const,
+          checkedAt: "t",
+          checks: [{ name: "checksums", verdict: "pass" as const }],
         },
       },
     };
-    expect(targetHash(boardWith("original", [withScore]), annotation)).not.toBe(baseHash);
+    expect(targetHash(boardWith("original", [withIntegrity]), annotation)).not.toBe(baseHash);
     const withReport = {
       ...base,
       publishedReport: { path: "plans/reports/x.md", content: "# regenerated\n" },

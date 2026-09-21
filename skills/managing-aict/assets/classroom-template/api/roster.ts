@@ -7,7 +7,6 @@ import { isAuthed, type HeaderBag } from "../lib/auth.js";
 import { SECURITY_HEADERS } from "../lib/gate.js";
 import { listRoster, upsertStudent, getLastViewed, setLastViewed, STUDENT_ID_RE, type RosterEntry } from "../lib/roster.js";
 import { getLatestPointer, getSubmission, listSubmissionsForStudent } from "../lib/submissions.js";
-import { readSimilarityCache, type SimilarityResult } from "../lib/similarity.js";
 import { findFreshestManifest, isRecord } from "../lib/reverify.js";
 
 export interface RunResult { status: number; json: unknown }
@@ -15,7 +14,6 @@ export interface RunResult { status: number; json: unknown }
 async function buildRosterRow(
   blobToken: string,
   entry: RosterEntry,
-  similarity: SimilarityResult | null,
   lastViewed: string | null,
 ): Promise<Record<string, unknown>> {
   const pointer = await getLatestPointer(blobToken, entry.studentId);
@@ -27,23 +25,20 @@ async function buildRosterRow(
       // The freshest results-bundle manifest across this submission's whole
       // payload — a submission can carry several components, each with
       // several results versions; the roster row surfaces the single most
-      // recently captured one as its headline score/integrity signal.
+      // recently captured one as its headline integrity signal.
       // Documented judgment call: this is a summary field for the roster
       // table, not a claim about which component matters most. The full
       // per-component picture is one click away via
       // GET /api/submissions/:studentId's `payload`, rendered by the
       // existing single-project board unmodified.
       const manifest = findFreshestManifest(sub.payload);
-      const score = manifest && isRecord(manifest.score) ? manifest.score : null;
       const integrityStatus = manifest && isRecord(manifest.integrity) && typeof manifest.integrity.status === "string"
         ? (manifest.integrity.status as "passed" | "failed")
         : "unknown";
       lastSubmission = {
         submittedAt: sub.submittedAt,
         idempotencyKey: sub.idempotencyKey,
-        score,
         integrityStatus,
-        reverify: sub.reverify,
       };
     }
   }
@@ -53,14 +48,6 @@ async function buildRosterRow(
   // single-digit submissions each) in exchange for an honest count, rather
   // than approximating it from the "has a latest pointer" signal alone.
   const submissionCount = (await listSubmissionsForStudent(blobToken, entry.studentId)).length;
-
-  const similarityFlags = (similarity?.flags ?? [])
-    .filter((f) => f.studentA === entry.studentId || f.studentB === entry.studentId)
-    .map((f) => ({
-      withStudentId: f.studentA === entry.studentId ? f.studentB : f.studentA,
-      jaccard: f.jaccard,
-      artifact: f.artifact,
-    }));
 
   // Compared as actual instants, not raw strings: submittedAt comes from
   // submit.py's datetime.now().astimezone().isoformat() — the STUDENT's
@@ -80,7 +67,6 @@ async function buildRosterRow(
     displayName: entry.displayName,
     lastSubmission,
     submissionCount,
-    similarityFlags,
     isNewSinceLastView,
   };
 }
@@ -99,14 +85,13 @@ export async function run(
 
   if (method === "GET") {
     const roster = await listRoster(blobToken);
-    const cache = await readSimilarityCache(blobToken);
     // Read the PREVIOUS last-viewed pointer before this view overwrites it —
     // every row's isNewSinceLastView is computed against the value as of the
     // instructor's prior visit, not this one, or every row would read as
     // "not new" the instant they're first seen.
     const lastViewed = await getLastViewed(blobToken);
     const students = await Promise.all(
-      roster.map((entry) => buildRosterRow(blobToken, entry, cache, lastViewed)),
+      roster.map((entry) => buildRosterRow(blobToken, entry, lastViewed)),
     );
     students.sort((a, b) => String(a.displayName).localeCompare(String(b.displayName)));
     const generatedAt = new Date().toISOString();
