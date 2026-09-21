@@ -1,6 +1,6 @@
 # Changelog
 
-## [Unreleased]
+## [0.7.0] - 2026-09-21
 
 ### Added
 - **Legacy-project guard on the sign-off gate.** `find_project_root` fails OPEN by design: an unrecognized opt-in marker returns `None` and every gate riding on it stops firing, silently. After the rename, a repo still carrying `<!-- papertrail:start -->` would therefore have run with no sign-off gate and no results/archive immutability, with nothing said. It now returns a `LEGACY` sentinel and every call site denies the write with a `/aict:init` migration notice instead. Covered by `tests/test_gate_legacy.py`; a project with no markers at all still passes through untouched, exactly as before.

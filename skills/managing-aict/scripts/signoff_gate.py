@@ -50,11 +50,14 @@ LEGACY_CLAUDE_MARKERS = (
 )
 LEGACY = object()
 LEGACY_DENY_REASON = (
-    "This project still carries the pre-AICT papertrail markers, so its "
-    "integrity gates (sign-off, results immutability, archived-plan "
-    "immutability) are NOT active on it. Run /aict:init to migrate the "
-    "markers, then retry. Refusing rather than letting the write through "
-    "ungated."
+    "This project carries the pre-AICT papertrail markers, so its integrity "
+    "gates (sign-off, results immutability, archived-plan immutability) are "
+    "NOT active on it. AICT ships no migration for pre-rename projects: "
+    "either start fresh with /aict:init in a new project, or replace the "
+    "papertrail markers with the aict ones by hand first "
+    "(<!-- aict:master-plan --> on line 1 of plans/master-plan.md, and the "
+    "<!-- aict:start --> / <!-- aict:end --> pair in CLAUDE.md). Refusing "
+    "rather than letting the write through ungated."
 )
 ORDER_FENCE_RE = re.compile(r"```json board-feedback\n(.*?)\n```", re.DOTALL)
 DEFAULT_TIMEOUT = 1500

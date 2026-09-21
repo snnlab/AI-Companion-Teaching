@@ -1,6 +1,6 @@
 {
   "name": "aict",
-  "version": "0.6.0",
+  "version": "0.7.0",
   "description": "AICT (AI Companion Teaching): a plan-based bridge between graduate students and their instructor for quantitative-methods coursework — a versioned analysis plan per component, a sign-off gate before the AI executes analysis, an append-only decision log, and checksum-verified results bundles.",
   "author": {
     "name": "AICT contributors"
