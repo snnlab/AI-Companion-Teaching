@@ -30,11 +30,15 @@ class TestInitPortabilityDocs(unittest.TestCase):
 class TestBoardReviewerPortabilityDocs(unittest.TestCase):
     def test_external_reviewers_have_preflights_and_permission(self):
         command = (REPO / "commands" / "board.md").read_text(encoding="utf-8")
+        review = (REPO / "skills" / "managing-aict" / "references"
+                  / "board-review.md").read_text(encoding="utf-8")
 
+        # The permission lives on the command that dispatches; the preflights
+        # live with the dispatch instructions themselves.
         self.assertIn("Bash(command:*)", command)
-        self.assertIn("command -v codex", command)
-        self.assertIn("command -v agy", command)
-        self.assertIn("not available — pick another reviewer", command)
+        self.assertIn("command -v codex", review)
+        self.assertIn("command -v agy", review)
+        self.assertIn("not available — pick another reviewer", review)
 
 
 class TestSignTransactionDocs(unittest.TestCase):
@@ -59,39 +63,56 @@ class TestSignTransactionDocs(unittest.TestCase):
 
     def test_sync_records_an_amendment_without_a_ticket(self):
         command = (REPO / "commands" / "sync.md").read_text(encoding="utf-8")
+        amendment = (REPO / "skills" / "managing-aict" / "references"
+                     / "amendment.md").read_text(encoding="utf-8")
 
-        self.assertIn("Amendment recorded, <YYYY-MM-DD>", command)
-        self.assertIn("without a ticket or board action", command)
+        # The procedure lives in the shared reference; sync points at it and
+        # keeps the board-facing label.
+        self.assertIn("Amendment recorded, <YYYY-MM-DD>", amendment)
+        self.assertIn("without a ticket", amendment + command)
         self.assertIn("amended △", command)
-        self.assertNotIn("new signed version", command)
+        self.assertIn("amendment.md", command)
+        for text in (command, amendment):
+            self.assertNotIn("new signed version", text)
 
     def test_sign_and_execute_share_the_recommitment_recipe(self):
         sign = (REPO / "commands" / "sign.md").read_text(encoding="utf-8")
         execute = (REPO / "commands" / "execute.md").read_text(encoding="utf-8")
+        amendment = (REPO / "skills" / "managing-aict" / "references"
+                     / "amendment.md").read_text(encoding="utf-8")
         recipe = ("Copy the amendment `v<N>.md` to `.draft-v<N+1>.md`. "
                   "Use `strip_trailer` from `signoff_gate.py`")
 
-        self.assertIn(recipe, sign)
-        self.assertIn(recipe, execute)
+        # One copy of the recipe, both commands routed to it.
+        self.assertIn(recipe, amendment)
+        self.assertIn("re-commitment for re-execution", amendment)
+        self.assertIn("trailer state `none`", amendment)
         for command in (sign, execute):
-            self.assertIn("re-commitment for re-execution", command)
-            self.assertIn("trailer state `none`", command)
+            self.assertIn("amendment.md", command)
+            self.assertIn("Re-committing an amendment for re-execution", command)
 
     def test_board_has_no_plan_approval_route(self):
-        command = (REPO / "commands" / "board.md").read_text(encoding="utf-8")
+        texts = [(REPO / "commands" / "board.md").read_text(encoding="utf-8")]
+        refs = REPO / "skills" / "managing-aict" / "references"
+        texts += [(refs / f"board-{n}.md").read_text(encoding="utf-8")
+                  for n in ("routing", "review", "modes")]
 
-        self.assertNotIn("Sign-off order", command)
-        self.assertNotIn("clicked Approve", command)
+        for text in texts:
+            self.assertNotIn("Sign-off order", text)
+            self.assertNotIn("clicked Approve", text)
 
     def test_board_reopens_on_a_produced_draft(self):
         command = (REPO / "commands" / "board.md").read_text(encoding="utf-8")
+        routing = (REPO / "skills" / "managing-aict" / "references"
+                   / "board-routing.md").read_text(encoding="utf-8")
         # A produced/refined plan draft is a third reopen trigger beside review/report.
         self.assertIn("produced a new or refined plan draft", command)
         # ...and the reopen focuses that component's draft.
-        self.assertIn("reopen the board focused on that component", command)
+        self.assertIn("reopen the board focused on that component", routing)
 
     def test_results_uses_the_governing_canonical_version(self):
-        command = (REPO / "commands" / "results.md").read_text(encoding="utf-8")
+        command = (REPO / "skills" / "managing-aict" / "references"
+                   / "capture.md").read_text(encoding="utf-8")
         validator = (REPO / "skills" / "managing-aict" /
                      "templates" / "agents" /
                      "aict-results-validator.md").read_text(encoding="utf-8")

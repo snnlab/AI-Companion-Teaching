@@ -27,13 +27,11 @@ Reconcile the plan artifacts with what actually happened. Skill context: `${CLAU
 
 5. **Split flag.** If execution revealed the component has become multi-component (per `${CLAUDE_PLUGIN_ROOT}/skills/managing-aict/references/split-criteria.md`), say so and propose the split as tracker rows.
 
-6. **Version on material deviation.** A recorded revision is an **amendment** to the plan. A silent deviation is a **breach**. If step 2 found a material deviation, copy the current version to `plans/execution/<NN-slug>/.draft-v<N+1>.md`. Resume an existing draft instead of overwriting it. Apply the changes and add `Supersedes: vN — <what changed and why>`. This line records the trigger and the change.
-
-   Update the first line `<!-- aict-model … -->` marker so it names your session model. The draft has no trailer. Before each fresh review round, copy it to the next unused `v<N+1>-draft-<K>.md` snapshot. Keep these snapshots as read-only history. Run the `/aict:review` workflow on the draft.
-
-   After the review, append `Amendment recorded, <YYYY-MM-DD>` as the final nonempty line and write `v<N+1>.md` directly. The hook admits this amendment path without a ticket or board action. Delete the ephemeral draft and keep every snapshot. Run the review workflow on the recorded plan so the matching draft scorecard moves to the canonical path. Leave the tracker status unchanged. An in-progress component stays in progress, and sync never moves a status backward or advances it. The board displays this version as `amended △`.
-
-   If the recorded version will govern more execution, re-commit it through **Launching a sign session** and **The finalization transaction** in `${CLAUDE_PLUGIN_ROOT}/skills/managing-aict/references/sign-off.md`. `/aict:execute` prepares that candidate and opens the sign session. Never edit an existing `vN.md`, including for a typo.
+6. **Version on material deviation.** If step 2 found one, load `${CLAUDE_PLUGIN_ROOT}/skills/managing-aict/references/amendment.md`
+   and follow **Recording an amendment**. It covers the `Supersedes` line, the model marker,
+   the draft snapshots and review round, the `Amendment recorded,` trailer the hook admits
+   without a ticket, and why the tracker status does not move. The board shows the result as
+   `amended △`. Never edit an existing `vN.md`, including for a typo.
 
 7. **Capture results automatically.** Skip any component the execution loop already captured this session (its tail owns the bundle and the board open). For each component whose status moved to `done` this sync — or where `python3 ${CLAUDE_PLUGIN_ROOT}/skills/managing-aict/scripts/results.py changed --component <NN-slug>` reports drifted sources — proceed into the `/aict:results <component>` workflow now, without waiting to be re-invoked. If several need capture, run `/aict:results` with no argument (reconcile mode walks them one by one). **Auto means you proceed into capture, not that you skip the student:** the per-component interview still runs and the student confirms each bundle's artifacts — capture stays visible and evidence-based, never a silent bulk write. `/aict:results` offers the bundle's shareable report and opens the board once at the end for view-only review, so do not open a second board here. A component whose captured sources have since drifted deserves an explicit flag: the validated bundle no longer matches the code outputs on disk. Capture includes the automatic plan-vs-execution validation (the results workflow's validation step); when it lands `deviations-found` on an unrecorded deviation, step 6 here — version on material deviation — is the remedy: propose the revision.
 

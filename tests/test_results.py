@@ -665,13 +665,19 @@ class TestResultsCommandDocs(unittest.TestCase):
     def test_adopt_reconcile_and_regeneration_route_to_reference(self):
         repo = Path(__file__).resolve().parents[1]
         command = (repo / "commands" / "results.md").read_text(encoding="utf-8")
+        capture = (repo / "skills" / "managing-aict" / "references" /
+                   "capture.md").read_text(encoding="utf-8")
         reference = (repo / "skills" / "managing-aict" / "references" /
                      "results-adopt.md").read_text(encoding="utf-8")
 
         self.assertIn("references/results-adopt.md", command)
-        for heading in ("Adopt existing results", "Reconcile missing results",
-                        "Regeneration and run recipes", "Summary-only bundles"):
+        # The mode switch stays on the command; the capture steps that cite the
+        # reference moved into capture.md, which both callers now load.
+        for heading in ("Adopt existing results", "Reconcile missing results"):
             self.assertIn(heading, command)
+            self.assertIn(heading, reference)
+        for heading in ("Regeneration and run recipes", "Summary-only bundles"):
+            self.assertIn(heading, capture)
             self.assertIn(heading, reference)
         self.assertNotIn("8. **Adopt mode", command)
         self.assertNotIn("9. **Reconcile mode", command)

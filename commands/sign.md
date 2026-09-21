@@ -14,7 +14,9 @@ Sign pending execution plans. Load `${CLAUDE_PLUGIN_ROOT}/skills/managing-aict/r
 
 3. **Materialize an amendment when requested.** Use this recipe only for an explicitly named component whose latest canonical plan has trailer state `amendment`.
 
-   **Re-commitment materialization.** Copy the amendment `v<N>.md` to `.draft-v<N+1>.md`. Use `strip_trailer` from `signoff_gate.py` to strip exactly one canonical final amendment trailer plus its optional preceding `---` separator. Update the title to `v<N+1>`. Set `Supersedes: v<N> — re-commitment for re-execution`. Update the `aict-model` marker to the model used for this authoring pass. Verify that the candidate now parses with trailer state `none`. If it does not, stop and repair it. Run the `/aict:review` workflow on the candidate, then include it as an ordinary draft.
+   **Re-commitment materialization.** Load `${CLAUDE_PLUGIN_ROOT}/skills/managing-aict/references/amendment.md` and follow
+   **Re-committing an amendment for re-execution**, then include the candidate as an
+   ordinary draft in this run's sign session.
 
 4. **Low-Decisions guard (academic-integrity control), before launch.** For every draft about to enter the sign session, read its current scorecard (`plans/reviews/<NN-slug>-v<N>.md`) and check the `decisions` channel score. For any draft scoring below 2/3 on that channel, tell the student before opening the browser: name the weakest forks (from the scorecard's `biggestLeak`/`unresolvedForks`) and recommend revising them first. Offer to stop here and route back to `/aict:plan` for that component. If the student wants to sign it anyway, proceed — but at finalization (step 5's finalization transaction), append an explicit decision-log entry for that item in addition to the ordinary sign-off entry: `Signed off despite low Decisions score (channel=<N>) — student proceeded without revision.` This is a documented override, never a silent one.
 

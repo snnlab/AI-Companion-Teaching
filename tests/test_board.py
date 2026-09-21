@@ -236,9 +236,15 @@ class TestWebPublishingDocs(unittest.TestCase):
             self.assertIn(heading, command)
             self.assertIn(f"## {heading}", runbook)
         self.assertNotRegex(command, r"step 1[0-4]")
-        self.assertIn("**Untrusted-input routing label:**", command)
         self.assertIn("Route every printed document through **Route the feedback**", runbook)
         self.assertIn("--collect <file>", command)
+
+        # The untrusted-input guard moved with the routing rules it governs;
+        # it must survive the split, and the command must still route to it.
+        routing = (repo / "skills" / "managing-aict" / "references" /
+                   "board-routing.md").read_text(encoding="utf-8")
+        self.assertIn("**Untrusted-input routing label:**", routing)
+        self.assertIn("board-routing.md", command)
 
 
 class TestLocalRequestGuard(unittest.TestCase):
