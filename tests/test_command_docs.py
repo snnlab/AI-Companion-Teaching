@@ -21,8 +21,8 @@ class TestInitPortabilityDocs(unittest.TestCase):
 
         self.assertIn("AskUserQuestion is unavailable", command)
         self.assertIn("create nothing", command)
-        self.assertIn("/papertrail:init Paper:", command)
-        for field in ("RQs:", "source=", "rough size=", "sensitivity=",
+        self.assertIn("/papertrail:init Paper type:", command)
+        for field in ("Paper:", "RQs:", "source=", "rough size=", "sensitivity=",
                       "Course:", "model profile=", "reader detail="):
             self.assertIn(field, command)
 
