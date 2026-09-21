@@ -45,7 +45,7 @@ The board renders the whole project in your browser, in six views — seven afte
 - **Models** — the per-stage [model profile](#model-profiles): read-only in every mode, and editable inline when the board is served live from your project (see below).
 - **Archive** — after a renewal, renders each archived master plan as it was, its component rows still linking to their plans and results. Pre-renewal components carry a quiet badge everywhere instead of drift flags.
 
-Each plan version, results bundle, report, and review also carries a small model-provenance chip — which model it used, both *prescribed* (from the profile) and *reported* (self-attested by the session, shown honestly as reported, never as confirmed runtime truth).
+Each plan version, results bundle, report, and review also carries a small model-provenance chip — which model it used, as that session reported it — shown honestly as self-attested, never as confirmed runtime truth.
 
 The board follows your OS light/dark preference, with a header toggle to override it (exports and shares carry the toggle too).
 

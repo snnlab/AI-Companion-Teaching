@@ -29,7 +29,7 @@ Reconcile the plan artifacts with what actually happened. Skill context: `${CLAU
 
 6. **Version on material deviation.** A recorded revision is an **amendment** to the plan. A silent deviation is a **breach**. If step 2 found a material deviation, copy the current version to `plans/execution/<NN-slug>/.draft-v<N+1>.md`. Resume an existing draft instead of overwriting it. Apply the changes and add `Supersedes: vN — <what changed and why>`. This line records the trigger and the change.
 
-   Update the first line `<!-- aict-model … -->` marker so `reported` names your session model. Keep `prescribed` from the `plan` row returned by `models.py stage plan`. The draft has no trailer. Before each fresh review round, copy it to the next unused `v<N+1>-draft-<K>.md` snapshot. Keep these snapshots as read-only history. Run the `/aict:review` workflow on the draft.
+   Update the first line `<!-- aict-model … -->` marker so it names your session model. The draft has no trailer. Before each fresh review round, copy it to the next unused `v<N+1>-draft-<K>.md` snapshot. Keep these snapshots as read-only history. Run the `/aict:review` workflow on the draft.
 
    After the review, append `Amendment recorded, <YYYY-MM-DD>` as the final nonempty line and write `v<N+1>.md` directly. The hook admits this amendment path without a ticket or board action. Delete the ephemeral draft and keep every snapshot. Run the review workflow on the recorded plan so the matching draft scorecard moves to the canonical path. Leave the tracker status unchanged. An in-progress component stays in progress, and sync never moves a status backward or advances it. The board displays this version as `amended △`.
 

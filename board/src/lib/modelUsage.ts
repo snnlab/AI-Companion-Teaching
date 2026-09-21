@@ -3,37 +3,23 @@
 // never crash a surface, and the plan marker parser strips its line even when
 // the JSON is invalid (an unclosed HTML comment would otherwise swallow the
 // whole plan body when rendered).
-import type { ModelSide, ModelUsage } from "./types";
+import type { ModelUsage } from "./types";
 
-const ALIASES = ["opus", "sonnet", "haiku", "fable"];
-
-function isSide(x: unknown): x is ModelSide {
-  if (!x || typeof x !== "object") return false;
+function side(x: unknown): ModelUsage | null {
+  if (!x || typeof x !== "object") return null;
   const s = x as Record<string, unknown>;
-  return typeof s.model === "string" && (typeof s.effort === "string" || s.effort === null);
+  if (typeof s.model !== "string" || !s.model) return null;
+  return { model: s.model, effort: typeof s.effort === "string" ? s.effort : null };
 }
 
-/** Coerce untrusted JSON into a ModelUsage, or null when nothing is usable. */
+/** Coerce untrusted JSON into a ModelUsage, or null when nothing is usable.
+ * Bundles sealed before the simplification carry `{prescribed, reported}`, and
+ * bundles are immutable, so that shape is read forever: prefer what actually
+ * ran (reported) over what the profile asked for (prescribed). */
 export function coerceModelUsage(x: unknown): ModelUsage | null {
   if (!x || typeof x !== "object") return null;
   const u = x as Record<string, unknown>;
-  const prescribed = isSide(u.prescribed) ? (u.prescribed as ModelSide) : null;
-  const reported = isSide(u.reported) ? (u.reported as ModelSide) : null;
-  if (!prescribed && !reported) return null;
-  return { prescribed, reported };
-}
-
-/** Alias/full-id aware model equality. `opus` matches `claude-opus-4-8`;
- * `inherit` means "no concrete prescription" and never matches a real model. */
-export function modelsEquivalent(a: string, b: string): boolean {
-  const x = a.trim().toLowerCase();
-  const y = b.trim().toLowerCase();
-  if (x === y) return true;
-  if (x === "inherit" || y === "inherit") return false;
-  for (const alias of ALIASES) {
-    if ((x === alias && y.includes(alias)) || (y === alias && x.includes(alias))) return true;
-  }
-  return false;
+  return side(u) ?? side(u.reported) ?? side(u.prescribed);
 }
 
 export const PLAN_MARKER_PREFIX = "<!-- aict-model";
@@ -68,22 +54,10 @@ export function stripPlanMarkerLine(content: string): string {
   return parsePlanModelMarker(content).body;
 }
 
-function formatSide(s: ModelSide): string {
-  return s.effort ? `${s.model}·${s.effort}` : s.model;
-}
-
-/** The text a ModelChip shows for a usage, or null when there is nothing to
- * show. `reportedLabel` frames the reported side (e.g. "captured by"). */
-export function modelChipText(
-  usage: ModelUsage,
-  reportedLabel = "reported",
-): { main: string; sub: string } | null {
-  const { prescribed: p, reported: r } = usage;
-  if (p) {
-    const main = formatSide(p);
-    const sub = r && !modelsEquivalent(p.model, r.model) ? `${reportedLabel} ${r.model}` : "";
-    return { main, sub };
-  }
-  if (r) return { main: `${reportedLabel} ${formatSide(r)}`, sub: "" };
-  return null;
+/** The text a ModelChip shows, or null when there is nothing to show.
+ * `label` frames it (e.g. "captured by sonnet·low"). */
+export function modelChipText(usage: ModelUsage, label?: string): string | null {
+  if (!usage.model) return null;
+  const core = usage.effort ? `${usage.model}·${usage.effort}` : usage.model;
+  return label ? `${label} ${core}` : core;
 }

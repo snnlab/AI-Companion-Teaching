@@ -48,8 +48,16 @@ class TestParseProfile(unittest.TestCase):
         )
         self.assertEqual(stages["sync"]["model"], "inherit")
         self.assertEqual(stages["plan-review"], {"stage": "plan-review", "model": "opus", "effort": "medium", "mechanism": "agent"})
-        self.assertEqual(stages["results-validation"]["effort"], "low")
-        self.assertEqual(stages["board-reviewer"]["mechanism"], "agent")
+        self.assertEqual(
+            stages["results-validation"],
+            {"stage": "results-validation", "model": "sonnet", "effort": "low",
+             "mechanism": "agent"},
+        )
+        self.assertEqual(
+            stages["board-reviewer"],
+            {"stage": "board-reviewer", "model": "sonnet", "effort": "low",
+             "mechanism": "agent"},
+        )
 
     def test_stage_label_parenthetical_and_case_insensitive(self):
         text = "| stage | model | effort | mechanism |\n|---|---|---|---|\n| Plan (whatever text) | opus | max | nudge |\n"
@@ -214,7 +222,7 @@ class TestGenerate(unittest.TestCase):
 
     def test_unset_effort_drops_the_line(self):
         profile = DEFAULT_PROFILE.replace(
-            "| results validation | opus | low | agent |",
+            "| results validation | sonnet | low | agent |",
             "| results validation | opus | — | agent |",
         )
         with tempfile.TemporaryDirectory() as tmp:
@@ -256,7 +264,7 @@ class TestGenerate(unittest.TestCase):
             self.assertIn("effort: high", second)
 
     def test_missing_agent_row_skips_that_agent_only(self):
-        profile = DEFAULT_PROFILE.replace("| board reviewer panel | opus | low | agent |\n", "")
+        profile = DEFAULT_PROFILE.replace("| board reviewer panel | sonnet | low | agent |\n", "")
         with tempfile.TemporaryDirectory() as tmp:
             root = make_project(tmp, profile=profile)
             code, out, err = self._generate(root)
@@ -327,7 +335,7 @@ class TestOrphanRemovalAndGuards(unittest.TestCase):
             root = make_project(tmp)
             self._run(root, "generate")
             profile = root / "plans" / "model-profile.md"
-            profile.write_text(DEFAULT_PROFILE.replace("| board reviewer panel | opus | low | agent |\n", ""), encoding="utf-8")
+            profile.write_text(DEFAULT_PROFILE.replace("| board reviewer panel | sonnet | low | agent |\n", ""), encoding="utf-8")
             code, out, err = self._run(root, "generate")
             self.assertEqual(code, 0)
             self.assertFalse((root / ".claude" / "agents" / "aict-board-reviewer.md").exists())
@@ -347,7 +355,7 @@ class TestOrphanRemovalAndGuards(unittest.TestCase):
 
     def test_user_owned_file_never_removed_on_missing_row(self):
         with tempfile.TemporaryDirectory() as tmp:
-            root = make_project(tmp, profile=DEFAULT_PROFILE.replace("| board reviewer panel | opus | low | agent |\n", ""))
+            root = make_project(tmp, profile=DEFAULT_PROFILE.replace("| board reviewer panel | sonnet | low | agent |\n", ""))
             agents = root / ".claude" / "agents"
             agents.mkdir(parents=True)
             mine = agents / "aict-board-reviewer.md"
@@ -402,8 +410,8 @@ class TestCanonical(unittest.TestCase):
 
     def test_warning_row_not_canonical(self):
         prof = DEFAULT_PROFILE.replace(
-            "| board reviewer panel | opus | low | agent |\n",
-            "| board reviewer panel | opus | low | agent |\n| deploy | opus | max | nudge |\n",
+            "| board reviewer panel | sonnet | low | agent |\n",
+            "| board reviewer panel | sonnet | low | agent |\n| deploy | opus | max | nudge |\n",
         )
         stages, warnings = models.parse_profile(prof)
         self.assertTrue(warnings)
@@ -562,7 +570,7 @@ class TestGenerateOutcomes(unittest.TestCase):
         with tempfile.TemporaryDirectory() as tmp:
             root = make_project(tmp)
             models.generate(root)
-            self._profile(root, DEFAULT_PROFILE.replace("| board reviewer panel | opus | low | agent |\n", ""))
+            self._profile(root, DEFAULT_PROFILE.replace("| board reviewer panel | sonnet | low | agent |\n", ""))
             res = models.generate(root)
             o = {r["stage"]: r["outcome"] for r in res["results"]}
             self.assertEqual(o["board-reviewer"], "removed")

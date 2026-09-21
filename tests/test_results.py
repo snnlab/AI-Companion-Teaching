@@ -485,58 +485,32 @@ class TestFinalizeProvenance(unittest.TestCase):
         r1 = root / "plans" / "execution" / "02-analysis" / "results" / "r1"
         return json.loads((r1 / "manifest.json").read_text())
 
-    def test_prescribed_from_execute_stage_and_reported_from_arg(self):
+    def test_model_recorded_from_the_reported_arg(self):
         with tempfile.TemporaryDirectory() as d:
             root = Path(d); make_project(root)
             m = self._stage_and_finalize(root, "--reported-model", "claude-opus-4-8")
-            self.assertEqual(m["modelUsage"]["prescribed"], {"model": "sonnet", "effort": None})
-            self.assertEqual(m["modelUsage"]["reported"], {"model": "claude-opus-4-8", "effort": None})
+            self.assertEqual(m["modelUsage"],
+                             {"model": "claude-opus-4-8", "effort": None})
 
-    def test_prescribed_only_when_no_reported_arg(self):
+    def test_absent_without_the_reported_arg(self):
+        """No self-attestation, no field — never fabricated from the profile."""
         with tempfile.TemporaryDirectory() as d:
             root = Path(d); make_project(root)
-            m = self._stage_and_finalize(root)
-            self.assertEqual(m["modelUsage"]["prescribed"], {"model": "sonnet", "effort": None})
-            self.assertIsNone(m["modelUsage"]["reported"])
+            self.assertNotIn("modelUsage", self._stage_and_finalize(root))
 
-    def test_no_modelusage_when_no_profile(self):
+    def test_absent_with_neither_profile_nor_arg(self):
         with tempfile.TemporaryDirectory() as d:
             root = Path(d); make_project(root)
-            m = self._stage_and_finalize(root, profile=False)
-            self.assertNotIn("modelUsage", m)
+            self.assertNotIn("modelUsage",
+                             self._stage_and_finalize(root, profile=False))
 
-    def test_reported_only_when_no_profile_but_arg_given(self):
+    def test_recorded_without_a_profile(self):
+        """Provenance is the session's own report; it does not need a profile."""
         with tempfile.TemporaryDirectory() as d:
             root = Path(d); make_project(root)
-            m = self._stage_and_finalize(root, "--reported-model", "sonnet", profile=False)
-            self.assertIsNone(m["modelUsage"]["prescribed"])
-            self.assertEqual(m["modelUsage"]["reported"], {"model": "sonnet", "effort": None})
-
-    def test_profile_read_error_is_advisory_but_visible(self):
-        import contextlib
-        import io
-        from types import SimpleNamespace
-        with tempfile.TemporaryDirectory() as d:
-            root = Path(d); make_project(root)
-            p = run_cli(root, "stage", "--component", "02-analysis")
-            staging = Path(p.stdout.strip())
-            (staging / "manifest.json").write_text(
-                json.dumps(manifest_for(staging)), encoding="utf-8")
-            (staging / "report.md").write_text("# Report\n", encoding="utf-8")
-            original = results.models.load_profile
-            results.models.load_profile = lambda *_args: (_ for _ in ()).throw(
-                OSError("profile unreadable"))
-            self.addCleanup(setattr, results.models, "load_profile", original)
-            stderr = io.StringIO()
-
-            with contextlib.redirect_stderr(stderr), contextlib.redirect_stdout(io.StringIO()):
-                results.cmd_finalize(
-                    root, SimpleNamespace(staging=str(staging), reported_model="sonnet"))
-
-            manifest = json.loads((root / "plans" / "execution" / "02-analysis" /
-                                   "results" / "r1" / "manifest.json").read_text())
-            self.assertIsNone(manifest["modelUsage"]["prescribed"])
-            self.assertIn("profile unreadable", stderr.getvalue())
+            m = self._stage_and_finalize(root, "--reported-model", "sonnet",
+                                         profile=False)
+            self.assertEqual(m["modelUsage"], {"model": "sonnet", "effort": None})
 
 
 class TestSubstantiveFindings(unittest.TestCase):

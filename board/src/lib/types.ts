@@ -84,18 +84,12 @@ export interface ModelProfile {
 
 // One side of a provenance record. `effort` is null when unknown (reported
 // effort is generally not introspectable) or unset.
-export interface ModelSide {
+// Attached to a plan version, result bundle, report, or scorecard/validation:
+// which model actually did the work, self-attested by that session. Never
+// presented as verified runtime truth — nothing checks it at runtime.
+export interface ModelUsage {
   model: string;
   effort: string | null;
-}
-
-// Attached to a plan version, result bundle, report, or scorecard/validation.
-// `prescribed` = what the profile assigned to the governing stage (reliable);
-// `reported` = what the capturing session/agent self-attested (best-effort,
-// NEVER presented as verified runtime truth). Either may be null.
-export interface ModelUsage {
-  prescribed: ModelSide | null;
-  reported: ModelSide | null;
 }
 
 // Result of a successful POST /api/model-profile (patched into App state).

@@ -2914,8 +2914,8 @@ class TestModelProfileRead(unittest.TestCase):
 
 DEFAULT_ROW_VALUES = {
     "plan": ("opus", "max"), "execute": ("sonnet", None), "sync": ("inherit", None),
-    "plan-review": ("opus", "medium"), "results-validation": ("opus", "low"),
-    "board-reviewer": ("opus", "low"),
+    "plan-review": ("opus", "medium"), "results-validation": ("sonnet", "low"),
+    "board-reviewer": ("sonnet", "low"),
 }
 
 

@@ -77,7 +77,7 @@ function ValidationSection({ v }: { v: ValidationBlock }) {
           <span className="ml-2 text-xs text-stone-400 dark:text-stone-500">{v.validatedAt}</span>
         )}
         {v.modelUsage && (
-          <ModelChip usage={coerceModelUsage(v.modelUsage)} reportedLabel="validated by" className="ml-2" />
+          <ModelChip usage={coerceModelUsage(v.modelUsage)} label="validated by" className="ml-2" />
         )}
       </summary>
       {v.reason && <p className="mt-2 text-xs text-stone-500">{v.reason}</p>}
@@ -508,7 +508,7 @@ export default function Results({
             </span>
           )}
           {m?.modelUsage && (
-            <ModelChip usage={coerceModelUsage(m.modelUsage)} reportedLabel="captured by" />
+            <ModelChip usage={coerceModelUsage(m.modelUsage)} label="captured by" />
           )}
           {m?.provenance === "retrofit" && (
             <span

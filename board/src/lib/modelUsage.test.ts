@@ -1,7 +1,6 @@
 import { describe, it, expect } from "vitest";
 import {
   coerceModelUsage,
-  modelsEquivalent,
   parsePlanModelMarker,
   stripPlanMarkerLine,
   modelChipText,
@@ -9,37 +8,36 @@ import {
 
 describe("coerceModelUsage", () => {
   it("accepts a well-formed usage", () => {
-    const u = coerceModelUsage({ prescribed: { model: "opus", effort: "max" }, reported: { model: "sonnet", effort: null } });
-    expect(u).toEqual({ prescribed: { model: "opus", effort: "max" }, reported: { model: "sonnet", effort: null } });
+    expect(coerceModelUsage({ model: "opus", effort: "max" }))
+      .toEqual({ model: "opus", effort: "max" });
+    expect(coerceModelUsage({ model: "sonnet" }))
+      .toEqual({ model: "sonnet", effort: null });
   });
-  it("keeps one side when the other is missing", () => {
-    expect(coerceModelUsage({ prescribed: { model: "opus", effort: null } })).toEqual({
-      prescribed: { model: "opus", effort: null }, reported: null,
-    });
+
+  // Bundles finalized before the simplification are immutable, so their
+  // {prescribed, reported} shape has to keep reading forever.
+  it("reads the legacy two-sided shape, preferring what actually ran", () => {
+    expect(coerceModelUsage({
+      prescribed: { model: "opus", effort: "max" },
+      reported: { model: "sonnet", effort: null },
+    })).toEqual({ model: "sonnet", effort: null });
   });
+  it("falls back to the prescribed side when nothing was reported", () => {
+    expect(coerceModelUsage({ prescribed: { model: "opus", effort: null }, reported: null }))
+      .toEqual({ model: "opus", effort: null });
+  });
+
   it("returns null when nothing usable", () => {
     expect(coerceModelUsage({})).toBeNull();
     expect(coerceModelUsage(null)).toBeNull();
-    expect(coerceModelUsage({ prescribed: { effort: "max" } })).toBeNull(); // no model
+    expect(coerceModelUsage({ effort: "max" })).toBeNull(); // no model
+    expect(coerceModelUsage({ prescribed: { effort: "max" } })).toBeNull();
     expect(coerceModelUsage("nope")).toBeNull();
   });
 });
 
-describe("modelsEquivalent", () => {
-  it("matches identical and alias/full-id pairs", () => {
-    expect(modelsEquivalent("opus", "opus")).toBe(true);
-    expect(modelsEquivalent("opus", "claude-opus-4-8")).toBe(true);
-    expect(modelsEquivalent("claude-sonnet-5", "sonnet")).toBe(true);
-  });
-  it("distinguishes different models and treats inherit as no prescription", () => {
-    expect(modelsEquivalent("opus", "sonnet")).toBe(false);
-    expect(modelsEquivalent("inherit", "opus")).toBe(false);
-    expect(modelsEquivalent("claude-opus-4-8", "claude-sonnet-5")).toBe(false);
-  });
-});
-
 describe("parsePlanModelMarker", () => {
-  const usage = { prescribed: { model: "opus", effort: "max" }, reported: { model: "opus", effort: null } };
+  const usage = { model: "opus", effort: "max" };
   it("extracts and strips a valid marker", () => {
     const content = `<!-- aict-model ${JSON.stringify(usage)} -->\n# Plan v1\n\nBody.`;
     const p = parsePlanModelMarker(content);
@@ -62,21 +60,15 @@ describe("parsePlanModelMarker", () => {
 });
 
 describe("modelChipText", () => {
-  it("shows prescribed only when reported agrees or is absent", () => {
-    expect(modelChipText({ prescribed: { model: "opus", effort: "max" }, reported: null }))
-      .toEqual({ main: "opus·max", sub: "" });
-    expect(modelChipText({ prescribed: { model: "opus", effort: "medium" }, reported: { model: "claude-opus-4-8", effort: null } }))
-      .toEqual({ main: "opus·medium", sub: "" }); // alias-equivalent → no override note
+  it("formats model and effort", () => {
+    expect(modelChipText({ model: "opus", effort: "max" })).toBe("opus·max");
+    expect(modelChipText({ model: "sonnet", effort: null })).toBe("sonnet");
   });
-  it("appends the reported override when it differs", () => {
-    expect(modelChipText({ prescribed: { model: "opus", effort: "max" }, reported: { model: "sonnet", effort: null } }))
-      .toEqual({ main: "opus·max", sub: "reported sonnet" });
+  it("prefixes a label when given", () => {
+    expect(modelChipText({ model: "opus", effort: null }, "captured by"))
+      .toBe("captured by opus");
   });
-  it("uses a custom reported label and reported-only form", () => {
-    expect(modelChipText({ prescribed: null, reported: { model: "opus", effort: null } }, "captured by"))
-      .toEqual({ main: "captured by opus", sub: "" });
-  });
-  it("returns null when empty", () => {
-    expect(modelChipText({ prescribed: null, reported: null })).toBeNull();
+  it("returns null without a model", () => {
+    expect(modelChipText({ model: "", effort: null })).toBeNull();
   });
 });

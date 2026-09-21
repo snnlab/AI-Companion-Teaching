@@ -100,7 +100,7 @@ function ScoreDetail({
         </span>
         <span className="flex items-center gap-2">
           {scorecard.modelUsage && (
-            <ModelChip usage={scorecard.modelUsage} reportedLabel="reviewed by" />
+            <ModelChip usage={scorecard.modelUsage} label="reviewed by" />
           )}
           <button
             type="button"

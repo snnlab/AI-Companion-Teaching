@@ -28,7 +28,6 @@ import uuid
 from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
-import models  # noqa: E402  (prescribed model lookup for result provenance)
 
 MAX_BYTES = 5 * 1024 * 1024
 SCAN_DIRS = ["output", "outputs", "figures", "figs", "plots", "viz", "visuals",
@@ -347,26 +346,12 @@ def cmd_finalize(root, args):
     version = next_version(results_dir)
     manifest["resultsVersion"] = version
     manifest.setdefault("schemaVersion", 1)
-    # Model provenance (which model captured this bundle). prescribed = the
-    # profile's execute stage; reported = the session that ran /results (passed
-    # via --reported-model — a self-attestation, not verified). Either may be
-    # absent; never fabricate the reported side.
-    prescribed = None
-    try:
-        stages, _, exists = models.load_profile(root)
-        row = stages.get("execute") if exists else None
-        if row:
-            prescribed = {"model": row["model"], "effort": row["effort"]}
-    except Exception as exc:
-        print("warning: could not load model profile for results provenance: %s" %
-              exc, file=sys.stderr)
-        prescribed = None
-    reported = None
+    # Model provenance: which model captured this bundle, as reported by the
+    # session that ran /results (--reported-model). A self-attestation —
+    # nothing verifies it at runtime — so never fabricate it.
     rm = getattr(args, "reported_model", None)
     if rm and rm.strip():
-        reported = {"model": rm.strip(), "effort": None}
-    if prescribed or reported:
-        manifest["modelUsage"] = {"prescribed": prescribed, "reported": reported}
+        manifest["modelUsage"] = {"model": rm.strip(), "effort": None}
     # Seal the mechanical integrity pass into the immutable manifest. Advisory:
     # a "failed" verdict is recorded and surfaced on the board, never blocks.
     manifest["integrity"] = compute_integrity(manifest, staging)

@@ -210,8 +210,7 @@ class TestGateBatchTickets(unittest.TestCase):
             import board  # noqa: E402
             import signoff_gate as gate  # noqa: E402
 
-            marker = ('<!-- aict-model {"prescribed":null,"reported":'
-                      '{"model":"sonnet","effort":null}} -->')
+            marker = '<!-- aict-model {"model":"sonnet","effort":null} -->'
             v1 = (marker + "\n# X — Execution Plan v1\n\n"
                   "## Goal and success criteria\n\nDo the thing.\n\n"
                   "Signed off: BK, 2026-07-17\n")
