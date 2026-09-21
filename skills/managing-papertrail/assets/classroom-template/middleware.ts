@@ -72,6 +72,22 @@ function isPreAuthRoute(pathname: string): boolean {
   return pathname === "/api/login" || pathname === "/api/logout";
 }
 
+// The student-facing feedback page and its assets. None of these carry an
+// instructor session or a server-rendered secret:
+//  - /me, /me.html  — a static shell that calls GET /api/my-comments with
+//    the student's own bearer token.
+//  - /sw.js         — the push service worker (static JS, no secret).
+//  - /api/vapid-public-key — the VAPID *public* key (public by definition).
+// Served at "/me" via a vercel.json rewrite to "/me.html".
+function isStudentPageRoute(pathname: string): boolean {
+  return (
+    pathname === "/me" ||
+    pathname === "/me.html" ||
+    pathname === "/sw.js" ||
+    pathname === "/api/vapid-public-key"
+  );
+}
+
 // POST /api/submissions is the student intake route: its only credential is
 // the `Authorization: Bearer <token>` header, verified inside the handler
 // itself (lib/roster.ts's resolveToken). Students never get a cookie this
@@ -89,7 +105,12 @@ function isPreAuthRoute(pathname: string): boolean {
 // api/my-comments.ts does its own token resolution; same reason for the
 // exemption as the two routes above.
 function isBearerTokenRoute(pathname: string): boolean {
-  return pathname === "/api/submissions" || pathname === "/api/comments" || pathname === "/api/my-comments";
+  return (
+    pathname === "/api/submissions" ||
+    pathname === "/api/comments" ||
+    pathname === "/api/my-comments" ||
+    pathname === "/api/push-subscribe"
+  );
 }
 
 // Keep this self-contained copy in sync with lib/loginPage.ts. The
@@ -107,7 +128,7 @@ export default function middleware(request: Request): Response | undefined {
   const now = Math.floor(Date.now() / 1000);
   const p = url.pathname;
 
-  if (isPreAuthRoute(p) || isBearerTokenRoute(p)) return next();
+  if (isPreAuthRoute(p) || isStudentPageRoute(p) || isBearerTokenRoute(p)) return next();
 
   const authed = isAuthed(process.env as Record<string, string | undefined>, request.headers, now);
   if (authed) return next(); // continue to the api function

@@ -20,20 +20,8 @@ function data(): RosterData {
           submittedAt: "2026-08-19T14:30",
           idempotencyKey: "k1",
           integrityStatus: "passed",
-          score: {
-            schemaVersion: 1,
-            channels: [
-              { id: "fidelity", name: "Fidelity", score: 3, basis: "all followed" },
-              { id: "attainment", name: "Attainment", score: 3, basis: "met" },
-              { id: "integrity", name: "Integrity", score: 3, basis: "all pass" },
-            ],
-            profile: "F3·A3·I3",
-            total: 9,
-            max: 9,
-          },
-          reverify: [
-            { check: "checksum", status: "match", detail: "all bytes matched" },
-          ],
+          score: null,
+          reverify: [],
         },
         similarityFlags: [],
         isNewSinceLastView: true,
@@ -47,14 +35,9 @@ function data(): RosterData {
           idempotencyKey: "k2",
           integrityStatus: "failed",
           score: null,
-          reverify: [
-            { check: "checksum", status: "mismatch", detail: "artifact bytes differ" },
-            { check: "sign-off timing", status: "flag", detail: "signed before earliest commit" },
-          ],
+          reverify: [],
         },
-        similarityFlags: [
-          { withStudentId: "s-amara", jaccard: 0.82, artifact: "decision-log" },
-        ],
+        similarityFlags: [],
       },
       {
         studentId: "s-cora",
@@ -90,26 +73,13 @@ describe("Roster table", () => {
     expect(within(brodyRow).queryByText("new")).toBeNull();
   });
 
-  it("renders each row's integrity status with the shared vocabulary", () => {
+  it("keeps the mechanical verification signals off this screen", () => {
     render(<Roster data={data()} />);
-    expect(screen.getByText("passed")).toBeTruthy();
-    expect(screen.getByText("failed")).toBeTruthy();
-  });
-
-  it("renders the F·A·I score via the shared OutputScorePanel chip", () => {
-    render(<Roster data={data()} />);
-    expect(screen.getByText("F3")).toBeTruthy();
-    expect(screen.getByText("A3")).toBeTruthy();
-    expect(screen.getByText("I3")).toBeTruthy();
-    expect(screen.getByText("9/9")).toBeTruthy();
-  });
-
-  it("shows a similarity flag count and expands to the paired student on click", () => {
-    render(<Roster data={data()} />);
-    const flagSummary = screen.getByText("1 flag");
-    fireEvent.click(flagSummary);
-    expect(screen.getByText(/s-amara/)).toBeTruthy();
-    expect(screen.getByText(/jaccard 0.82/)).toBeTruthy();
+    // No F·A·I score chip, no integrity pass/fail vocabulary, no trust-tier legend.
+    expect(screen.queryByText("How to read these signals")).toBeNull();
+    expect(screen.queryByText(/F·A·I/)).toBeNull();
+    expect(screen.queryByText("passed")).toBeNull();
+    expect(screen.queryByText("failed")).toBeNull();
   });
 
   it("sorts by student name and reverses on a second click", () => {
@@ -126,10 +96,5 @@ describe("Roster table", () => {
   it("shows an empty-roster message when no students are registered", () => {
     render(<Roster data={{ ...data(), students: [] }} />);
     expect(screen.getByText(/No students registered yet/)).toBeTruthy();
-  });
-
-  it("shows the trust tier legend above the table", () => {
-    render(<Roster data={data()} />);
-    expect(screen.getByText("How to read these signals")).toBeTruthy();
   });
 });

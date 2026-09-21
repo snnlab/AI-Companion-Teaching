@@ -1,97 +1,27 @@
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import App from "../App";
-import OutputScorePanel from "../components/OutputScorePanel";
-import TrustTierLegend from "../components/TrustTierLegend";
 import type {
-  ReverifyCheck,
   RosterData,
-  RosterIntegrityStatus,
-  RosterRow,
-  SimilarityFlag,
   StudentFetchState,
   StudentSubmission,
 } from "../lib/rosterTypes";
 
-type SortKey = "name" | "submitted" | "score" | "integrity" | "similarity";
+type SortKey = "name" | "submitted";
 type SortDir = "asc" | "desc";
-
-// Same visual vocabulary Results.tsx already uses for IntegrityBlock (see
-// INTEGRITY_CLS there) plus a muted "unknown" tier for a submission the
-// server hasn't run its mechanical pass against yet — kept identical on
-// purpose so an instructor doesn't have to learn a second color meaning the
-// same thing.
-const INTEGRITY_CLS: Record<RosterIntegrityStatus, string> = {
-  passed:
-    "border-green-200 dark:border-green-900 bg-green-50 dark:bg-green-950 text-green-800 dark:text-green-300",
-  failed:
-    "border-amber-300 dark:border-amber-800 bg-amber-50 dark:bg-amber-950 text-amber-900 dark:text-amber-200",
-  unknown:
-    "border-stone-200 dark:border-stone-800 bg-stone-50 dark:bg-stone-800/50 text-stone-400 dark:text-stone-500",
-};
-
-// Reverify checks are softer, descriptive signals (see TrustTierLegend) —
-// deliberately NOT the integrity block's red/green/amber pass-fail
-// vocabulary, and NOT FeedbackPanel's rose "⚠ integrity concern" badge. A
-// distinct, cooler palette per status.
-const REVERIFY_CLS: Record<ReverifyCheck["status"], string> = {
-  match:
-    "border-sky-200 dark:border-sky-900 bg-sky-50 dark:bg-sky-950 text-sky-700 dark:text-sky-300",
-  mismatch:
-    "border-violet-300 dark:border-violet-800 bg-violet-50 dark:bg-violet-950 text-violet-800 dark:text-violet-300",
-  "not-derivable":
-    "border-stone-200 dark:border-stone-800 bg-stone-50 dark:bg-stone-800/50 text-stone-400 dark:text-stone-500",
-  flag:
-    "border-teal-300 dark:border-teal-800 bg-teal-50 dark:bg-teal-950 text-teal-800 dark:text-teal-300",
-};
-
-const SIMILARITY_CLS =
-  "border-fuchsia-300 dark:border-fuchsia-800 bg-fuchsia-50 dark:bg-fuchsia-950 text-fuchsia-800 dark:text-fuchsia-300";
 
 function fmtDate(iso: string): string {
   return iso.length >= 16 ? iso.slice(0, 16).replace("T", " ") : iso;
 }
 
-function scoreTotal(row: RosterRow): number {
-  return row.lastSubmission?.score?.total ?? -1;
-}
-
-function integrityRank(status: RosterIntegrityStatus | undefined): number {
-  switch (status) {
-    case "failed":
-      return 0;
-    case "unknown":
-      return 1;
-    case "passed":
-      return 2;
-    default:
-      return 3; // never submitted
-  }
-}
-
-function sortRows(rows: RosterRow[], key: SortKey, dir: SortDir): RosterRow[] {
+function sortRows(rows: RosterData["students"], key: SortKey, dir: SortDir) {
   const sorted = [...rows].sort((a, b) => {
     let cmp = 0;
-    switch (key) {
-      case "name":
-        cmp = a.displayName.localeCompare(b.displayName);
-        break;
-      case "submitted": {
-        const at = a.lastSubmission?.submittedAt ?? "";
-        const bt = b.lastSubmission?.submittedAt ?? "";
-        cmp = at.localeCompare(bt);
-        break;
-      }
-      case "score":
-        cmp = scoreTotal(a) - scoreTotal(b);
-        break;
-      case "integrity":
-        cmp =
-          integrityRank(a.lastSubmission?.integrityStatus) -
-          integrityRank(b.lastSubmission?.integrityStatus);
-        break;
-      case "similarity":
-        cmp = a.similarityFlags.length - b.similarityFlags.length;
-        break;
+    if (key === "name") {
+      cmp = a.displayName.localeCompare(b.displayName);
+    } else {
+      const at = a.lastSubmission?.submittedAt ?? "";
+      const bt = b.lastSubmission?.submittedAt ?? "";
+      cmp = at.localeCompare(bt);
     }
     return dir === "asc" ? cmp : -cmp;
   });
@@ -122,61 +52,6 @@ function SortHeader({
         {active && <span aria-hidden>{dir === "asc" ? "▲" : "▼"}</span>}
       </button>
     </th>
-  );
-}
-
-/** A compact chip that expands (native <details>) to the full list of checks.
- * The chip color reflects the least-reassuring status present, but each
- * expanded entry keeps its own status color — never collapsed to one signal. */
-function ReverifyCell({ checks }: { checks: ReverifyCheck[] }) {
-  const worst: ReverifyCheck["status"] = checks.some((c) => c.status === "mismatch")
-    ? "mismatch"
-    : checks.some((c) => c.status === "flag")
-      ? "flag"
-      : checks.every((c) => c.status === "not-derivable")
-        ? "not-derivable"
-        : "match";
-  return (
-    <details onClick={(e) => e.stopPropagation()}>
-      <summary
-        className={`inline-flex cursor-pointer list-none items-center gap-1 rounded-full border px-2 py-0.5 text-[10px] font-semibold ${REVERIFY_CLS[worst]}`}
-      >
-        {checks.length} check{checks.length === 1 ? "" : "s"}
-      </summary>
-      <ul className="mt-1 max-w-xs space-y-1 text-[11px]">
-        {checks.map((c, i) => (
-          <li key={i} className="flex flex-wrap items-baseline gap-1.5">
-            <span
-              className={`rounded border px-1 text-[10px] font-medium ${REVERIFY_CLS[c.status]}`}
-            >
-              {c.status}
-            </span>
-            <span className="font-medium text-stone-700 dark:text-stone-300">{c.check}</span>
-            <span className="text-stone-500">{c.detail}</span>
-          </li>
-        ))}
-      </ul>
-    </details>
-  );
-}
-
-function SimilarityCell({ flags }: { flags: SimilarityFlag[] }) {
-  return (
-    <details onClick={(e) => e.stopPropagation()}>
-      <summary
-        className={`inline-flex cursor-pointer list-none items-center gap-1 rounded-full border px-2 py-0.5 text-[10px] font-semibold ${SIMILARITY_CLS}`}
-      >
-        {flags.length} flag{flags.length === 1 ? "" : "s"}
-      </summary>
-      <ul className="mt-1 max-w-xs space-y-1 text-[11px] text-stone-600 dark:text-stone-400">
-        {flags.map((f, i) => (
-          <li key={i}>
-            vs. <span className="font-medium text-stone-800 dark:text-stone-200">{f.withStudentId}</span>{" "}
-            — jaccard {f.jaccard.toFixed(2)} ({f.artifact})
-          </li>
-        ))}
-      </ul>
-    </details>
   );
 }
 
@@ -212,36 +87,133 @@ function StudentError({
   );
 }
 
+type PushSummary = { sent: number; pruned: number } | null;
+
+type SendState =
+  | { phase: "idle"; releasedAt: string | null }
+  | { phase: "sending" }
+  | { phase: "sent"; releasedAt: string; push: PushSummary }
+  | { phase: "error"; message: string };
+
+/** "학생에게 피드백 보내기" — the only instructor action that reaches the
+ * student's /me page. Posts to /api/release for the CURRENT submission's
+ * shareHash. Until it is pressed, the student sees nothing; pressing it again
+ * after adding more comments just refreshes the release timestamp (and
+ * re-lights the student's "새 피드백" badge). */
+function SendFeedbackButton({
+  shareHash,
+  by,
+}: {
+  shareHash: string;
+  by?: string;
+}) {
+  const [state, setState] = useState<SendState>({ phase: "idle", releasedAt: null });
+
+  useEffect(() => {
+    let cancelled = false;
+    setState({ phase: "idle", releasedAt: null });
+    fetch(`/api/release?shareHash=${encodeURIComponent(shareHash)}`, {
+      credentials: "include",
+    })
+      .then((r) => (r.ok ? r.json() : null))
+      .then((j) => {
+        if (!cancelled && j && typeof j.releasedAt === "string") {
+          setState({ phase: "idle", releasedAt: j.releasedAt });
+        }
+      })
+      .catch(() => {
+        /* a missing prior-state read is not an error worth showing */
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [shareHash]);
+
+  const send = async () => {
+    setState({ phase: "sending" });
+    try {
+      const res = await fetch("/api/release", {
+        method: "POST",
+        credentials: "include",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ shareHash, by }),
+      });
+      const j = await res.json().catch(() => ({}));
+      if (!res.ok) {
+        setState({ phase: "error", message: j?.error ?? `HTTP ${res.status}` });
+        return;
+      }
+      setState({
+        phase: "sent",
+        releasedAt: j.releasedAt ?? new Date().toISOString(),
+        push: j.push && typeof j.push.sent === "number" ? j.push : null,
+      });
+    } catch {
+      setState({ phase: "error", message: "서버에 연결하지 못했습니다." });
+    }
+  };
+
+  const already =
+    (state.phase === "idle" && state.releasedAt) ||
+    (state.phase === "sent" && state.releasedAt) ||
+    null;
+
+  return (
+    <div className="mt-2 border-t border-stone-200 dark:border-stone-700 pt-2">
+      <button
+        type="button"
+        disabled={state.phase === "sending"}
+        className="w-full rounded-md bg-stone-900 dark:bg-stone-200 px-2.5 py-1.5 text-xs font-medium text-white dark:text-stone-900 hover:bg-stone-700 dark:hover:bg-stone-400 disabled:opacity-60"
+        onClick={send}
+      >
+        {state.phase === "sending"
+          ? "보내는 중…"
+          : already
+            ? "피드백 다시 보내기"
+            : "학생에게 피드백 보내기"}
+      </button>
+      {state.phase === "error" && (
+        <p className="mt-1 text-[11px] text-rose-600 dark:text-rose-400">
+          보내지 못했습니다 — {state.message}
+        </p>
+      )}
+      {already && state.phase !== "error" && (
+        <p className="mt-1 text-[11px] text-emerald-700 dark:text-emerald-400">
+          {state.phase === "sent" ? "보냈습니다" : "이미 보냄"} · {fmtDate(already)}
+          {state.phase === "sent" && state.push && state.push.sent > 0 && (
+            <> · 알림 {state.push.sent}건 전송</>
+          )}
+        </p>
+      )}
+      {!already && state.phase === "idle" && (
+        <p className="mt-1 text-[11px] text-stone-400 dark:text-stone-500">
+          누르기 전까지 학생에게는 아무것도 표시되지 않습니다.
+        </p>
+      )}
+    </div>
+  );
+}
+
 /** The drilled-in view: renders the EXISTING, unmodified App.tsx with one
- * submission's payload (App already accepts BoardData as a prop). A floating
- * panel — not part of App's own layout — carries the "back to roster"
- * affordance plus this submission's integrity/reverify signals and, when a
- * student has more than one submission, a switcher between them. Floating
- * (fixed) rather than in-flow so it never collides with App's own sticky
- * header. */
+ * submission's payload. The floating panel carries "back to roster", a
+ * submission switcher, and the "학생에게 피드백 보내기" button. */
 function StudentBoard({
+  studentId,
   submissions,
   onBack,
   defaultReviewer,
 }: {
+  studentId: string;
   submissions: StudentSubmission[];
   onBack: () => void;
   defaultReviewer?: string;
 }) {
   const [idx, setIdx] = useState(0);
   const sub = submissions[Math.min(idx, submissions.length - 1)] ?? null;
-  // A submission's payload comes off the wire tagged mode: "submission" (see
-  // submit.py's build_envelope) — that mode intentionally has canAnnotate
-  // false in App.tsx (a plain roster view has nothing to comment INTO). Once
-  // the instructor drills into one student's board, this IS a hosted-comment
-  // experience in every way that matters: the instructor types a name once,
-  // selects text, and posts through the exact same /api/comments flow a
-  // --publish-web collaborator uses — the classroom server's api/comments.ts
-  // just scopes storage by shareHash instead of by (single) deployment.
-  // Overriding mode here, rather than adding "submission" to App.tsx's
-  // canAnnotate list, reuses ALL of that existing hosted-mode machinery
-  // (fetch/post wiring, reviewer-name persistence, save-state banners)
-  // unmodified.
+  // A submission's payload comes off the wire tagged mode: "submission"; the
+  // roster overrides it to "hosted" so App's hosted-comment machinery (the
+  // /api/comments post/fetch wiring, reviewer-name persistence) fires
+  // unmodified — same reasoning as before this file was simplified.
   const boardData = useMemo(
     () =>
       sub
@@ -260,18 +232,8 @@ function StudentBoard({
         >
           ← Back to roster
         </button>
-        {sub && (
-          <div className="flex flex-wrap items-center gap-1.5">
-            <span
-              className={`rounded-full border px-1.5 py-0.5 font-semibold uppercase tracking-wide ${INTEGRITY_CLS[sub.integrityStatus]}`}
-            >
-              {sub.integrityStatus}
-            </span>
-            {sub.reverify.length > 0 && <ReverifyCell checks={sub.reverify} />}
-          </div>
-        )}
         {submissions.length > 1 && (
-          <div className="mt-2 flex flex-wrap gap-1">
+          <div className="mt-1 flex flex-wrap gap-1">
             {submissions.map((s, i) => (
               <button
                 key={s.idempotencyKey}
@@ -288,6 +250,13 @@ function StudentBoard({
             ))}
           </div>
         )}
+        {sub && (
+          <SendFeedbackButton
+            key={sub.idempotencyKey}
+            shareHash={sub.idempotencyKey}
+            by={defaultReviewer}
+          />
+        )}
       </div>
       {sub && boardData ? (
         <App data={boardData} />
@@ -302,12 +271,12 @@ function StudentBoard({
   );
 }
 
-/** Instructor-facing roster dashboard (Phase 2): a sortable table of every
- * registered student's latest submission, modeled on Archive.tsx/Timeline.tsx
- * as "browse a collection of records" templates. Clicking a row fetches that
- * student's full submission history and hands the latest payload to the
- * existing, unmodified App.tsx — drilling in is "render the single-project
- * board with this payload," not a new rendering path. */
+/** Instructor-facing roster dashboard: a sortable table of every registered
+ * student's latest submission. Clicking a row fetches that student's full
+ * submission history and hands the latest payload to the existing,
+ * unmodified App.tsx. Deliberately minimal — name, when they last submitted,
+ * and a "new" marker; the mechanical verification signals are computed and
+ * logged server-side but kept off this screen. */
 export default function Roster({ data }: { data: RosterData }) {
   const [sortKey, setSortKey] = useState<SortKey>("name");
   const [sortDir, setSortDir] = useState<SortDir>("asc");
@@ -395,6 +364,7 @@ export default function Roster({ data }: { data: RosterData }) {
         )}
         {studentState.status === "ready" && (
           <StudentBoard
+            studentId={selected.studentId}
             submissions={studentState.data.submissions}
             onBack={backToRoster}
             defaultReviewer={data.course.instructorName ?? undefined}
@@ -406,7 +376,6 @@ export default function Roster({ data }: { data: RosterData }) {
 
   return (
     <div>
-      <TrustTierLegend />
       {data.students.length === 0 ? (
         <div className="rounded-lg border border-dashed border-stone-300 dark:border-stone-600 bg-white dark:bg-stone-900 p-10 text-center text-sm text-stone-500">
           No students registered yet. Run <code>/papertrail:host --add-student</code> or{" "}
@@ -449,25 +418,6 @@ export default function Roster({ data }: { data: RosterData }) {
                     active={sortKey === "submitted"}
                     dir={sortDir}
                     onClick={() => toggleSort("submitted")}
-                  />
-                  <SortHeader
-                    label="F·A·I score"
-                    active={sortKey === "score"}
-                    dir={sortDir}
-                    onClick={() => toggleSort("score")}
-                  />
-                  <SortHeader
-                    label="Integrity"
-                    active={sortKey === "integrity"}
-                    dir={sortDir}
-                    onClick={() => toggleSort("integrity")}
-                  />
-                  <th className="px-4 py-2">Reverify</th>
-                  <SortHeader
-                    label="Similarity"
-                    active={sortKey === "similarity"}
-                    dir={sortDir}
-                    onClick={() => toggleSort("similarity")}
                   />
                 </tr>
               </thead>
@@ -515,41 +465,6 @@ export default function Roster({ data }: { data: RosterData }) {
                           <span className="text-xs text-stone-400 dark:text-stone-500">
                             never submitted
                           </span>
-                        )}
-                      </td>
-                      <td className="px-4 py-2.5" onClick={(e) => e.stopPropagation()}>
-                        {sub?.score ? (
-                          <OutputScorePanel
-                            score={sub.score}
-                            sections={{ validation: false, integrity: false }}
-                          />
-                        ) : (
-                          <span className="text-xs text-stone-400 dark:text-stone-500">—</span>
-                        )}
-                      </td>
-                      <td className="px-4 py-2.5">
-                        {sub ? (
-                          <span
-                            className={`rounded-full border px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wide ${INTEGRITY_CLS[sub.integrityStatus]}`}
-                          >
-                            {sub.integrityStatus}
-                          </span>
-                        ) : (
-                          <span className="text-xs text-stone-400 dark:text-stone-500">—</span>
-                        )}
-                      </td>
-                      <td className="px-4 py-2.5">
-                        {sub && sub.reverify.length > 0 ? (
-                          <ReverifyCell checks={sub.reverify} />
-                        ) : (
-                          <span className="text-xs text-stone-400 dark:text-stone-500">—</span>
-                        )}
-                      </td>
-                      <td className="px-4 py-2.5">
-                        {row.similarityFlags.length > 0 ? (
-                          <SimilarityCell flags={row.similarityFlags} />
-                        ) : (
-                          <span className="text-xs text-stone-400 dark:text-stone-500">none</span>
                         )}
                       </td>
                     </tr>

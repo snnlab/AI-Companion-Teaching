@@ -107,4 +107,26 @@ describe("GET /api/my-comments", () => {
     expect(r.status).toBe(200);
     expect((r.json as { comments: unknown[] }).comments).toEqual([]);
   });
+
+  it("reports per-submission releasedAt (null until the instructor sends feedback)", async () => {
+    mockAliceWithSubmissions([{ key: "share-a", blobs: [] }, { key: "share-b", blobs: [] }]);
+    list.mockImplementation(async ({ prefix }: { prefix: string }) => {
+      if (prefix === "submissions/alice/") {
+        return { blobs: [{ pathname: "submissions/alice/share-a.json" }, { pathname: "submissions/alice/share-b.json" }], hasMore: false };
+      }
+      return { blobs: [], hasMore: false };
+    });
+    const origGet = get.getMockImplementation();
+    get.mockImplementation(async (pathname: string) => {
+      if (pathname === "release/share-b.json") {
+        return { statusCode: 200, stream: streamOf({ releasedAt: "2026-09-09T00:00:00.000Z", by: "Prof. Kim" }) };
+      }
+      return origGet ? origGet(pathname) : null;
+    });
+    const r = await run("GET", studentHeaders(), ENV);
+    expect(r.status).toBe(200);
+    const subs = (r.json as { submissions: { shareHash: string; releasedAt: string | null }[] }).submissions;
+    expect(subs.find((s) => s.shareHash === "share-a")?.releasedAt).toBeNull();
+    expect(subs.find((s) => s.shareHash === "share-b")?.releasedAt).toBe("2026-09-09T00:00:00.000Z");
+  });
 });

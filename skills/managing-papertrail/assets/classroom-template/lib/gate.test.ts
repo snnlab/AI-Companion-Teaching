@@ -25,6 +25,13 @@ describe("gateDecision", () => {
   it("always allows GET /api/my-comments without the instructor cookie (bearer-only route)", () => {
     expect(gateDecision("/api/my-comments", "GET", false).action).toBe("allow");
   });
+  it("always allows the student feedback page + its push assets pre-auth", () => {
+    expect(gateDecision("/me", "GET", false).action).toBe("allow");
+    expect(gateDecision("/me.html", "GET", false).action).toBe("allow");
+    expect(gateDecision("/sw.js", "GET", false).action).toBe("allow");
+    expect(gateDecision("/api/vapid-public-key", "GET", false).action).toBe("allow");
+    expect(gateDecision("/api/push-subscribe", "POST", false).action).toBe("allow");
+  });
   it("serves the login PAGE for an unauthenticated page request", () => {
     expect(gateDecision("/", "GET", false).action).toBe("loginPage");
     expect(gateDecision("/index.html", "GET", false).action).toBe("loginPage");

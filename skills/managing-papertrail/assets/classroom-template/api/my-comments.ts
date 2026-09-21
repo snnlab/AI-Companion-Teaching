@@ -14,6 +14,7 @@ import { SECURITY_HEADERS } from "../lib/gate.js";
 import { resolveToken } from "../lib/roster.js";
 import { listSubmissionsForStudent } from "../lib/submissions.js";
 import { listCommentsForShareHash, type StoredComment } from "../lib/comments.js";
+import { getRelease } from "../lib/release.js";
 
 export interface RunResult { status: number; json: unknown }
 
@@ -42,8 +43,8 @@ export async function run(
   const studentId = await resolveToken(blobToken, pepper, token);
   if (!studentId) return { status: 401, json: { error: "invalid_token" } };
 
-  const submissions = await listSubmissionsForStudent(blobToken, studentId);
-  const shareHashes = Array.from(new Set(submissions.map((s) => s.idempotencyKey)));
+  const stored = await listSubmissionsForStudent(blobToken, studentId);
+  const shareHashes = Array.from(new Set(stored.map((s) => s.idempotencyKey)));
 
   const perSubmission = await Promise.all(
     shareHashes.map((sh) => listCommentsForShareHash(blobToken, sh)),
@@ -51,7 +52,22 @@ export async function run(
   const comments: StoredComment[] = perSubmission.flat();
   comments.sort((a, b) => (a.receivedAt < b.receivedAt ? -1 : a.receivedAt > b.receivedAt ? 1 : 0));
 
-  return { status: 200, json: { studentId, comments } };
+  // Per-submission "released" state — the /me page uses releasedAt both to
+  // decide what to show at all (nothing until the instructor clicks "학생에게
+  // 피드백 보내기") and to compute its "new feedback" badge. /papertrail:check
+  // ignores this list and still pulls every comment; releasing only gates the
+  // passive web notification, never the explicit student-initiated pull.
+  const releases = await Promise.all(shareHashes.map((sh) => getRelease(blobToken, sh)));
+  const byKey = new Map(
+    stored.map((s) => [s.idempotencyKey, s.submittedAt] as const),
+  );
+  const submissions = shareHashes.map((sh, i) => ({
+    shareHash: sh,
+    submittedAt: byKey.get(sh) ?? null,
+    releasedAt: releases[i]?.releasedAt ?? null,
+  }));
+
+  return { status: 200, json: { studentId, comments, submissions } };
 }
 
 export default async function handler(req: VercelRequest, res: VercelResponse): Promise<void> {

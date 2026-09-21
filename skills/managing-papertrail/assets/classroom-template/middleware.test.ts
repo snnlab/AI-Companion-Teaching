@@ -76,6 +76,13 @@ describe("middleware default export", () => {
     expect(next).toHaveBeenCalledTimes(1);
   });
 
+  it("continues an unauthenticated request to the student feedback page and its push assets", () => {
+    for (const p of ["/me", "/me.html", "/sw.js", "/api/vapid-public-key", "/api/push-subscribe"]) {
+      expect(middleware(new Request(`https://roster.example${p}`, { method: p === "/api/push-subscribe" ? "POST" : "GET" }))?.status).toBe(204);
+    }
+    expect(next).toHaveBeenCalledTimes(5);
+  });
+
   it("returns the login page for an unauthenticated page request", async () => {
     const response = middleware(new Request("https://roster.example/"));
     const html = await response?.text();
@@ -109,7 +116,7 @@ describe("inlined auth parity", () => {
   });
 
   it("matches lib/gate.ts's gateDecision for the exempt/gated route split", () => {
-    const routes = ["/api/login", "/api/logout", "/api/submissions", "/api/submissions/alice", "/api/comments", "/api/my-comments", "/api/roster", "/"];
+    const routes = ["/api/login", "/api/logout", "/api/submissions", "/api/submissions/alice", "/api/comments", "/api/my-comments", "/api/push-subscribe", "/api/vapid-public-key", "/me", "/me.html", "/sw.js", "/api/roster", "/"];
     for (const pathname of routes) {
       const response = middleware(new Request(`https://roster.example${pathname}`));
       const decision = gateDecision(pathname, "GET", false);

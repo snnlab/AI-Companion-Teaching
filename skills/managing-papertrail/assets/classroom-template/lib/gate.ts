@@ -32,6 +32,23 @@ export function gateDecision(
   // all) — api/my-comments.ts resolves and checks the token itself. Same
   // reasoning as the two exemptions above.
   if (pathname === "/api/my-comments") return { action: "allow" };
+  // POST/DELETE /api/push-subscribe — bearer-only (the student's own token),
+  // same reasoning as /api/my-comments.
+  if (pathname === "/api/push-subscribe") return { action: "allow" };
+  // The student feedback page and its assets: a static shell with no
+  // instructor session and no server-rendered secret. It authenticates its
+  // own /api/my-comments and /api/push-subscribe fetches with the student's
+  // bearer token; /api/vapid-public-key returns only the public key.
+  // Served at /me via a vercel.json rewrite to /me.html — allow both. Keep
+  // in sync with middleware.ts's isStudentPageRoute.
+  if (
+    pathname === "/me" ||
+    pathname === "/me.html" ||
+    pathname === "/sw.js" ||
+    pathname === "/api/vapid-public-key"
+  ) {
+    return { action: "allow" };
+  }
   if (authed) return { action: "allow" };
   if (pathname.startsWith("/api/")) return { action: "unauthorizedJson" };
   return { action: "loginPage" };

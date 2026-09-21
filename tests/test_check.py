@@ -197,7 +197,9 @@ class TestCheck(unittest.TestCase):
         self.assertEqual(len(calls), 1)
         self.assertEqual(calls[0], (check.SEED_FILE_NAME, "02-clpm-fit"))
 
-    def test_general_only_comments_do_not_open_the_board(self):
+    def test_general_only_comments_still_open_the_board(self):
+        # No anchor, no seed file — but the board should still open
+        # unconditionally so the student sees the new feedback.
         calls = []
         orig = check.open_seed_board
         check.open_seed_board = lambda *a: calls.append(a)
@@ -208,7 +210,8 @@ class TestCheck(unittest.TestCase):
                     check.main()
         finally:
             check.open_seed_board = orig
-        self.assertEqual(calls, [])
+        self.assertEqual(len(calls), 1)
+        self.assertEqual(calls[0][1:], (None, None))
 
     def test_no_board_env_suppresses_spawn(self):
         # open_seed_board is the real one here; PAPERTRAIL_NO_BOARD=1 (setUp)
