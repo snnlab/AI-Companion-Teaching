@@ -1,5 +1,35 @@
 # Changelog
 
+## [0.8.0] - 2026-09-24
+
+The board had a tab for the analysis plan, the results, and machine-generated
+per-component reports — but nowhere for the actual manuscript, the paper being
+graded. Student and instructor had no shared surface to exchange feedback on
+the paper itself.
+
+### Added
+- **Manuscript tab.** Placed second in the nav bar, right after Tracker.
+  `board.py` discovers `plans/manuscript.{md,docx,hwp,hwpx}` (in that priority
+  order) and adds it to the payload present-only, exactly like `history`/
+  `archives`. Markdown is the encouraged path and renders as-is. A `.docx` is
+  read through a small stdlib-only extractor (`zipfile` + `ElementTree` — a
+  `.docx` is just a zip of XML, so no mammoth/pandoc dependency), producing
+  plain text with best-effort Heading1-6 prefixing; formatting, images, and
+  tables are lost, and the board says so. `.hwp`/`.hwpx` are surfaced as
+  explicitly unsupported rather than guessed at — there's no reliable
+  stdlib-only parse path for either.
+- **Feedback on the manuscript reuses the existing hosted-comment pipeline
+  unchanged.** The new `Manuscript.tsx` view is wired through the same
+  doc-comment/`AnnotationLayer` machinery every other tab uses, so post,
+  release, `/me`, and web push already work for it with **zero server-side
+  changes** — the classroom server's `validate.ts` never inspects the `view`
+  field, only `type`. Staleness detection mirrors the Reports doc-comment
+  branch in both `hostedComments.ts` and `board.py`'s `_doc_stale`, hashing
+  the same extracted text the payload carries, not raw docx bytes.
+- **`/aict:init` scaffolds `plans/manuscript.md`** from a new starter template
+  on first init — present-only, never touches an existing manuscript file of
+  any supported extension.
+
 ## [0.7.0] - 2026-09-21
 
 ### Added
