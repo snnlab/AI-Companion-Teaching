@@ -42,6 +42,8 @@ import urllib.error
 import urllib.request
 import uuid
 import webbrowser
+import zipfile
+import xml.etree.ElementTree as ET
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 
@@ -226,6 +228,94 @@ def read_file(root, rel):
     return {"path": rel, "content": p.read_text(encoding="utf-8", errors="replace")}
 
 
+_DOCX_W_NS = "{http://schemas.openxmlformats.org/wordprocessingml/2006/main}"
+
+
+def _extract_docx_text(p):
+    """Best-effort plain-text extraction from a .docx (an OOXML zip). Stdlib
+    only (zipfile + ElementTree) — deliberately NOT mammoth/pandoc: no extra
+    pip dependency, and board.py's Markdown renderer escapes raw HTML by
+    policy anyway, so there is nothing to gain from an HTML conversion.
+    Paragraphs styled Heading1-6 are prefixed with '#'*N so the manuscript
+    still gets a heading outline; anything unexpected in a paragraph's style
+    is treated as body text rather than raising."""
+    with zipfile.ZipFile(p) as z:
+        xml_bytes = z.read("word/document.xml")
+    root_el = ET.fromstring(xml_bytes)
+    w = _DOCX_W_NS
+    lines = []
+    for para in root_el.iter(w + "p"):
+        text = "".join(node.text or "" for node in para.iter(w + "t"))
+        if not text.strip():
+            continue
+        level = 0
+        pstyle = para.find(f"{w}pPr/{w}pStyle")
+        if pstyle is not None:
+            val = pstyle.get(w + "val") or ""
+            m = re.fullmatch(r"Heading(\d)", val)
+            if m:
+                level = min(int(m.group(1)), 6)
+        lines.append((("#" * level + " ") if level else "") + text)
+    return "\n\n".join(lines)
+
+
+_MANUSCRIPT_CANDIDATES = [
+    ("manuscript.md", "markdown"),
+    ("manuscript.docx", "docx-text"),
+    ("manuscript.hwp", "unsupported"),
+    ("manuscript.hwpx", "unsupported"),
+]
+
+
+def _read_manuscript_file(root):
+    """Finds plans/manuscript.{md,docx,hwp,hwpx} in that priority order.
+    Markdown is the encouraged path; docx is read via best-effort stdlib text
+    extraction; hwp/hwpx are surfaced as unsupported rather than guessed at —
+    there's no reliable stdlib-only parse path for the legacy binary format,
+    and no sample file in this repo to validate an hwpx (zip/XML) attempt
+    against. Returns None when no manuscript file exists at all."""
+    plans = root / "plans"
+    for name, fmt in _MANUSCRIPT_CANDIDATES:
+        p = plans / name
+        if not p.is_file():
+            continue
+        rel = "plans/" + name
+        if fmt == "unsupported":
+            return {
+                "path": rel,
+                "content": "",
+                "format": "unsupported",
+                "note": "HWP files can't be previewed on the board. Write your "
+                        "manuscript in plans/manuscript.md (recommended), or "
+                        "export it to Word (plans/manuscript.docx).",
+            }
+        if fmt == "markdown":
+            entry = read_file(root, rel)
+            entry["format"] = "markdown"
+            return entry
+        # docx
+        try:
+            content = _extract_docx_text(p)
+        except (KeyError, zipfile.BadZipFile, ET.ParseError, OSError):
+            return {
+                "path": rel,
+                "content": "",
+                "format": "unsupported",
+                "note": "This Word file couldn't be read (it may be corrupted "
+                        "or not a standard .docx). Write your manuscript in "
+                        "plans/manuscript.md instead.",
+            }
+        return {
+            "path": rel,
+            "content": content,
+            "format": "docx-text",
+            "note": "Converted from Word — formatting, images, and tables are "
+                    "not preserved. Write directly in plans/manuscript.md for "
+                    "full fidelity.",
+        }
+    return None
+
+
 def payload_files(payload):
     """Every embedded plan file in the payload, mirroring the client's allFiles()."""
     f = payload["files"]
@@ -248,6 +338,8 @@ def payload_files(payload):
     if f.get("history"):
         out.append(f["history"])
     out.extend(f.get("archives", []))
+    if f.get("manuscript"):
+        out.append(f["manuscript"])
     return out
 
 
@@ -795,6 +887,9 @@ def collect_payload(root, mode, focus):
             entry["archivedOn"] = m.group(1) if m else ""
             archives.append(entry)
 
+    # Manuscript — whole-project material, like decision-log/history/archives.
+    manuscript = _read_manuscript_file(root)
+
     if mode == "remote" and focus:
         exec_groups = [g for g in exec_groups if g["component"] == focus]
         if not exec_groups:
@@ -813,6 +908,8 @@ def collect_payload(root, mode, focus):
             }
         # archived master plans are whole-project material too — omit entirely.
         archives = []
+        # manuscript is whole-project material too — omit entirely.
+        manuscript = None
 
     all_paths = ["plans/master-plan.md", "plans/decision-log.md"]
     for g in exec_groups:
@@ -824,6 +921,8 @@ def collect_payload(root, mode, focus):
     all_paths.extend(r["path"] for r in reviews)
     if history is not None:
         all_paths.append("plans/history.md")
+    if manuscript is not None:
+        all_paths.append(manuscript["path"])
 
     payload = {
         "schemaVersion": 2,
@@ -839,6 +938,7 @@ def collect_payload(root, mode, focus):
             "reviews": reviews,
             **({"history": history} if history is not None else {}),
             **({"archives": archives} if archives else {}),
+            **({"manuscript": manuscript} if manuscript is not None else {}),
         },
     }
     # Reader detail level (board default collapse); present-only, harmless on any
@@ -2524,7 +2624,8 @@ def neutralize_collaborator_text(s, inline=False):
 
 
 _VIEW_LABEL = {"tracker": "Tracker", "timeline": "Timeline",
-               "reviews": "Reviews", "archive": "Archive", "reports": "Reports"}
+               "reviews": "Reviews", "archive": "Archive", "reports": "Reports",
+               "manuscript": "Manuscript"}
 
 
 def _nt(v):
@@ -2573,6 +2674,9 @@ _REPORT_DOCKEY_RE = re.compile(r"plans/reports/[A-Za-z0-9._-]+-r\d+-report\.md")
 # Component regex must start alphanumeric (real components are NN-slug) — this
 # rejects "." and ".." so a poisoned component can't path-escape upward.
 _COMPONENT_RE = re.compile(r"[A-Za-z0-9][A-Za-z0-9._-]*")
+# Only md/docx are ever annotatable (see _read_manuscript_file) — hwp/hwpx
+# never render an AnnotationLayer client-side, so no comment can carry that docKey.
+_MANUSCRIPT_DOCKEY_RE = re.compile(r"plans/manuscript\.(?:md|docx)")
 
 
 def _doc_stale(root, a):
@@ -2597,16 +2701,27 @@ def _doc_stale(root, a):
                 or not _REPORT_DOCKEY_RE.fullmatch(key)):
             return None
         p = root / key
+    elif t == "doc-comment" and a.get("view") == "manuscript":
+        key = a.get("docKey")
+        if (not isinstance(key, str) or len(key) > 300
+                or not _MANUSCRIPT_DOCKEY_RE.fullmatch(key)):
+            return None
+        p = root / key
     else:
         return None
     try:
         if not p.is_file():
             return True  # target gone — definitely not current
-        content = p.read_text(encoding="utf-8", errors="replace")
-        if t == "doc-comment":
+        if t == "doc-comment" and a.get("view") == "manuscript" and p.suffix == ".docx":
+            # Must match collect_payload's extraction, not the raw file bytes —
+            # the client hashed the EXTRACTED text, not the docx binary.
+            content = _extract_docx_text(p)
+        else:
+            content = p.read_text(encoding="utf-8", errors="replace")
+        if t == "doc-comment" and a.get("view") == "reports":
             content = _strip_report_marker(content)
         return fnv1a_hex(content) != dh
-    except (OSError, ValueError):
+    except (OSError, ValueError, KeyError, zipfile.BadZipFile, ET.ParseError):
         return None  # unverifiable, not stale
 
 

@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import Tracker from "./views/Tracker";
+import Manuscript from "./views/Manuscript";
 import PlanReader from "./views/PlanReader";
 import Results from "./views/Results";
 import Timeline from "./views/Timeline";
@@ -61,10 +62,11 @@ import type {
   StoredComment,
 } from "./lib/types";
 
-type Tab = "tracker" | "plans" | "results" | "timeline" | "archive" | "reports" | "models";
+type Tab = "tracker" | "manuscript" | "plans" | "results" | "timeline" | "archive" | "reports" | "models";
 
 export const TABS: { id: Tab; label: string }[] = [
   { id: "tracker", label: "Tracker" },
+  { id: "manuscript", label: "Manuscript" },
   { id: "plans", label: "Analysis Plans" },
   { id: "results", label: "Output & Validation" },
   { id: "reports", label: "Reports" },
@@ -1242,6 +1244,18 @@ export default function App({ data }: { data: BoardData }) {
               data.files.archives?.length ? () => setTab("archive") : undefined
             }
             onOpenReport={openReport}
+            onOutline={setOutline}
+            onActiveFile={setActiveFile}
+          />
+        )}
+        {tab === "manuscript" && (
+          <Manuscript
+            data={data}
+            canAnnotate={canAnnotate}
+            annotations={annotations}
+            onAddDocComment={addDocComment}
+            onPaintResult={onPaintResult}
+            onAddGeneral={addGeneral}
             onOutline={setOutline}
             onActiveFile={setActiveFile}
           />

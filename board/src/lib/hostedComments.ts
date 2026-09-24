@@ -54,6 +54,12 @@ export function targetHash(data: BoardData, a: Annotation): string | null {
       ? hashContent(stripMarkerLine(rv.publishedReport.content))
       : null;
   }
+  if (a.type === "doc-comment" && a.view === "manuscript") {
+    // No marker to strip — the manuscript is raw student prose, not an
+    // AI-marked document. Board.py's _doc_stale mirrors this exactly.
+    const m = data.files.manuscript;
+    return m && m.path === a.docKey ? hashContent(m.content) : null;
+  }
   // doc-comment (a derived view) and general: no single file — fall back to board hash.
   return null;
 }

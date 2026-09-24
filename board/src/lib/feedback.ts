@@ -55,6 +55,7 @@ export const VIEW_LABEL: Record<DocCommentAnnotation["view"], string> = {
   reviews: "Reviews",
   archive: "Archive",
   reports: "Reports",
+  manuscript: "Manuscript",
 };
 
 export function buildFeedbackMarkdown(

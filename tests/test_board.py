@@ -4,6 +4,7 @@
 import argparse
 import hashlib
 import http.client
+import io
 import json
 import os
 import re
@@ -16,6 +17,7 @@ import time
 import unittest
 import urllib.error
 import urllib.request
+import zipfile
 from http.server import BaseHTTPRequestHandler
 from pathlib import Path
 
@@ -2799,6 +2801,36 @@ class TestPullStaleness(unittest.TestCase):
             self.assertNotIn("may refer to an older version", doc)
             self.assertIn("Reports", doc)  # _VIEW_LABEL entry
 
+    def test_stale_manuscript_comment_is_tagged(self):
+        with tempfile.TemporaryDirectory() as d:
+            root = Path(d); make_project(root)
+            (root / "plans" / "manuscript.md").write_text("# Draft\n\nOriginal.\n", encoding="utf-8")
+            current = board.fnv1a_hex("# Draft\n\nOriginal.\n")
+            fresh = {"type": "doc-comment", "view": "manuscript",
+                     "docKey": "plans/manuscript.md", "quote": "q", "comment": "fresh",
+                     "docHash": current}
+            stale = {"type": "doc-comment", "view": "manuscript",
+                     "docKey": "plans/manuscript.md", "quote": "q", "comment": "stale",
+                     "docHash": "00000000"}
+            doc = board.assemble_hosted_document([fresh, stale], {"sessionId": "s",
+                "generatedAt": "", "focus": None, "reviewer": "r", "shareHash": "h"}, root=root)
+            self.assertEqual(doc.count("may refer to an older version"), 1)
+            self.assertLess(doc.index("fresh"), doc.index("may refer to an older version"))
+            self.assertIn("Manuscript", doc)  # _VIEW_LABEL entry
+
+    def test_manuscript_docx_staleness_uses_extracted_text_not_raw_bytes(self):
+        with tempfile.TemporaryDirectory() as d:
+            root = Path(d); make_project(root)
+            (root / "plans" / "manuscript.docx").write_bytes(
+                TestExtractDocxText._make_docx([("Draft body.", None)]))
+            current = board.fnv1a_hex(board._extract_docx_text(root / "plans" / "manuscript.docx"))
+            fresh = {"type": "doc-comment", "view": "manuscript",
+                     "docKey": "plans/manuscript.docx", "quote": "q", "comment": "fresh",
+                     "docHash": current}
+            doc = board.assemble_hosted_document([fresh], {"sessionId": "s",
+                "generatedAt": "", "focus": None, "reviewer": "r", "shareHash": "h"}, root=root)
+            self.assertNotIn("may refer to an older version", doc)
+
     def test_json_hashed_types_pass_through_untagged(self):
         with tempfile.TemporaryDirectory() as d:
             root = Path(d); make_project(root)
@@ -3247,6 +3279,102 @@ class TestDetailLevel(unittest.TestCase):
                 encoding="utf-8")
             self.assertEqual(
                 board.collect_payload(root, "live", None)["detailLevel"], "compact")
+
+
+class TestManuscript(unittest.TestCase):
+    def test_payload_omits_when_absent(self):
+        with tempfile.TemporaryDirectory() as d:
+            root = Path(d); make_project(root)
+            self.assertNotIn("manuscript", board.collect_payload(root, "live", None)["files"])
+
+    def test_payload_includes_markdown_manuscript(self):
+        with tempfile.TemporaryDirectory() as d:
+            root = Path(d); make_project(root)
+            (root / "plans" / "manuscript.md").write_text("# Draft\n\nHello.\n", encoding="utf-8")
+            m = board.collect_payload(root, "live", None)["files"]["manuscript"]
+            self.assertEqual(m["path"], "plans/manuscript.md")
+            self.assertEqual(m["format"], "markdown")
+            self.assertEqual(m["content"], "# Draft\n\nHello.\n")
+
+    def test_markdown_preferred_over_docx_when_both_present(self):
+        with tempfile.TemporaryDirectory() as d:
+            root = Path(d); make_project(root)
+            (root / "plans" / "manuscript.md").write_text("# MD wins\n", encoding="utf-8")
+            (root / "plans" / "manuscript.docx").write_bytes(b"not a real docx")
+            m = board.collect_payload(root, "live", None)["files"]["manuscript"]
+            self.assertEqual(m["path"], "plans/manuscript.md")
+
+    def test_hwp_reported_as_unsupported(self):
+        with tempfile.TemporaryDirectory() as d:
+            root = Path(d); make_project(root)
+            (root / "plans" / "manuscript.hwp").write_bytes(b"\x00binary hwp")
+            m = board.collect_payload(root, "live", None)["files"]["manuscript"]
+            self.assertEqual(m["format"], "unsupported")
+            self.assertIn("HWP", m["note"])
+
+    def test_focused_remote_share_omits_manuscript(self):
+        with tempfile.TemporaryDirectory() as d:
+            root = Path(d); make_project(root)
+            (root / "plans" / "manuscript.md").write_text("# Draft\n", encoding="utf-8")
+            payload = board.collect_payload(root, "remote", "01-data-prep")
+            self.assertNotIn("manuscript", payload["files"])
+
+    def test_share_hash_changes_when_manuscript_changes(self):
+        with tempfile.TemporaryDirectory() as d:
+            root = Path(d); make_project(root)
+            (root / "plans" / "manuscript.md").write_text("v1\n", encoding="utf-8")
+            h1 = board.share_hash(board.payload_files(board.collect_payload(root, "live", None)))
+            (root / "plans" / "manuscript.md").write_text("v2\n", encoding="utf-8")
+            h2 = board.share_hash(board.payload_files(board.collect_payload(root, "live", None)))
+            self.assertNotEqual(h1, h2)
+
+
+class TestExtractDocxText(unittest.TestCase):
+    """No python-docx/fixture binary needed — a .docx is just a zip of XML,
+    so tests build a minimal real one in-memory."""
+
+    _W = "http://schemas.openxmlformats.org/wordprocessingml/2006/main"
+
+    @classmethod
+    def _make_docx(cls, paragraphs):
+        w = cls._W
+        body = []
+        for text, style in paragraphs:
+            ppr = f'<w:pPr><w:pStyle w:val="{style}"/></w:pPr>' if style else ""
+            body.append(f"<w:p>{ppr}<w:r><w:t>{text}</w:t></w:r></w:p>")
+        xml = (
+            '<?xml version="1.0" encoding="UTF-8" standalone="yes"?>'
+            f'<w:document xmlns:w="{w}"><w:body>{"".join(body)}</w:body></w:document>'
+        )
+        buf = io.BytesIO()
+        with zipfile.ZipFile(buf, "w") as z:
+            z.writestr("word/document.xml", xml)
+        return buf.getvalue()
+
+    def test_extracts_paragraphs_and_prefixes_headings(self):
+        with tempfile.TemporaryDirectory() as d:
+            p = Path(d) / "m.docx"
+            p.write_bytes(self._make_docx([
+                ("Title", "Heading1"),
+                ("Some body text.", None),
+                ("A subsection", "Heading2"),
+            ]))
+            self.assertEqual(
+                board._extract_docx_text(p),
+                "# Title\n\nSome body text.\n\n## A subsection")
+
+    def test_empty_paragraphs_are_dropped(self):
+        with tempfile.TemporaryDirectory() as d:
+            p = Path(d) / "m.docx"
+            p.write_bytes(self._make_docx([("Kept", None), ("   ", None)]))
+            self.assertEqual(board._extract_docx_text(p), "Kept")
+
+    def test_corrupt_docx_falls_back_to_unsupported_in_collect_payload(self):
+        with tempfile.TemporaryDirectory() as d:
+            root = Path(d); make_project(root)
+            (root / "plans" / "manuscript.docx").write_bytes(b"not a zip at all")
+            m = board.collect_payload(root, "live", None)["files"]["manuscript"]
+            self.assertEqual(m["format"], "unsupported")
 
 
 class TestLauncherScript(unittest.TestCase):

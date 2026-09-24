@@ -55,6 +55,19 @@ function planData(content: string): BoardData {
   return boardWith(content);
 }
 
+function dataWithManuscript(path: string, content: string): BoardData {
+  const d = boardWith("plan content");
+  d.files.manuscript = { path, content, format: "markdown" };
+  return d;
+}
+
+const manuscriptComment = (docKey: string) =>
+  ({
+    id: "1", type: "doc-comment", view: "manuscript",
+    docKey, scope: "", quote: "q", prefix: "",
+    suffix: "", sectionHeading: "", occurrenceIndex: 0, anchored: true, comment: "c",
+  }) as const;
+
 function resultsBundle(resultsVersion: number, manifestContent: string): ResultsBundle {
   return {
     resultsVersion,
@@ -241,6 +254,32 @@ describe("targetHash: reports branch + cross-language pin", () => {
     // pinned via `python3 -c "…; print(board.fnv1a_hex('plan body\n'))"` — same
     // literal is asserted in TestPullStaleness.test_fnv1a_matches_client_hashcontent.
     expect(targetHash(d, a)).toBe("723e3740");
+  });
+});
+
+describe("targetHash: manuscript branch", () => {
+  it("hashes the manuscript's content directly (no marker to strip)", () => {
+    const d = dataWithManuscript("plans/manuscript.md", "# Draft\n\nSome prose.");
+    const a = manuscriptComment("plans/manuscript.md");
+    const h1 = targetHash(d, a);
+    expect(h1).not.toBeNull();
+
+    const edited = dataWithManuscript("plans/manuscript.md", "# Draft\n\nEdited prose.");
+    expect(targetHash(edited, a)).not.toBe(h1);
+
+    const unchanged = dataWithManuscript("plans/manuscript.md", "# Draft\n\nSome prose.");
+    expect(targetHash(unchanged, a)).toBe(h1);
+  });
+
+  it("returns null when the comment's docKey doesn't match the current manuscript path", () => {
+    const d = dataWithManuscript("plans/manuscript.md", "content");
+    const a = manuscriptComment("plans/manuscript.docx"); // e.g. student switched formats
+    expect(targetHash(d, a)).toBeNull();
+  });
+
+  it("returns null when there is no manuscript at all", () => {
+    const d = boardWith("plan content"); // files.manuscript absent
+    expect(targetHash(d, manuscriptComment("plans/manuscript.md"))).toBeNull();
   });
 });
 

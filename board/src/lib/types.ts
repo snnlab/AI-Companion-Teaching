@@ -42,6 +42,7 @@ export interface BoardData {
     reviews: BoardFile[];
     history?: BoardFile; // reconstructed pre-adoption history; present only when it exists
     archives?: ArchiveFile[]; // archived master plans (v0.10 renewal); present-only
+    manuscript?: ManuscriptFile; // Manuscript tab; present-only, whole-project material
   };
   publishToken?: string;
 }
@@ -49,6 +50,14 @@ export interface BoardData {
 export interface BoardFile {
   path: string;
   content: string;
+}
+
+// Mirrors board.py's _read_manuscript_file. "markdown" and "docx-text" are
+// annotatable (rendered + AnnotationLayer); "unsupported" (hwp/hwpx, or a
+// docx that failed to parse) shows `note` as guidance instead of content.
+export interface ManuscriptFile extends BoardFile {
+  format: "markdown" | "docx-text" | "unsupported";
+  note?: string;
 }
 
 // ---- model profile (Models tab) ----
@@ -514,8 +523,8 @@ export interface SeededAnnotation {
 export interface DocCommentAnnotation {
   id: string;
   type: "doc-comment";
-  view: "tracker" | "timeline" | "reviews" | "archive" | "reports";
-  docKey: string; // "tracker" | "timeline" | review file payload path | "archive:<path>"
+  view: "tracker" | "timeline" | "reviews" | "archive" | "reports" | "manuscript";
+  docKey: string; // "tracker" | "timeline" | review file payload path | "archive:<path>" | manuscript file path
   scope: string; // data-annot-scope id, "" when selection was outside stamps
   quote: string;
   prefix: string;

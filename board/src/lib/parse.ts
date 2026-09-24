@@ -476,6 +476,7 @@ export function allFiles(data: {
     reviews: { path: string; content: string }[];
     history?: { path: string; content: string };
     archives?: { path: string; content: string }[];
+    manuscript?: { path: string; content: string };
   };
 }): { path: string; content: string }[] {
   const out = [data.files.masterPlan, data.files.decisionLog];
@@ -496,5 +497,7 @@ export function allFiles(data: {
   if (data.files.history) out.push(data.files.history);
   // Present-only, same rule: archived master plans (v0.10 renewal record).
   out.push(...(data.files.archives ?? []));
+  // Present-only, same rule: the manuscript (Manuscript tab).
+  if (data.files.manuscript) out.push(data.files.manuscript);
   return out;
 }
