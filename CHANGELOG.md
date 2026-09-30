@@ -1,6 +1,6 @@
 # Changelog
 
-## [Unreleased]
+## [0.8.1] - 2026-09-30
 
 ### Added
 - **Figures in the Manuscript tab.** Image references in `plans/manuscript.md`
