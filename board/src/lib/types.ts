@@ -58,6 +58,9 @@ export interface BoardFile {
 export interface ManuscriptFile extends BoardFile {
   format: "markdown" | "docx-text" | "unsupported";
   note?: string;
+  // Figures, keyed by the exact href the manuscript uses (markdown) or
+  // "docx-media/<name>" (Word). Present-only; values are board URLs or data: URIs.
+  assets?: Record<string, string>;
 }
 
 // ---- model profile (Models tab) ----

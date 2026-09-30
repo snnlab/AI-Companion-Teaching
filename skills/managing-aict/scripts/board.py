@@ -39,6 +39,7 @@ import tempfile
 import threading
 import time
 import urllib.error
+import urllib.parse
 import urllib.request
 import uuid
 import webbrowser
@@ -229,6 +230,38 @@ def read_file(root, rel):
 
 
 _DOCX_W_NS = "{http://schemas.openxmlformats.org/wordprocessingml/2006/main}"
+_DOCX_A_NS = "{http://schemas.openxmlformats.org/drawingml/2006/main}"
+_DOCX_R_NS = "{http://schemas.openxmlformats.org/officeDocument/2006/relationships}"
+_DOCX_REL_NS = "{http://schemas.openxmlformats.org/package/2006/relationships}"
+# Prefix for figures pulled out of a .docx. Never a real path: the key only
+# ever resolves against the manuscript's own `assets` map.
+DOCX_MEDIA_PREFIX = "docx-media/"
+
+# Manuscript figures: images only (no PDF — an <img> can't show one), and a
+# per-file cap so one stray huge image can't bloat every shared board.html /
+# submission.
+MANUSCRIPT_FIGURE_EXTS = {".png", ".jpg", ".jpeg", ".gif", ".webp", ".svg"}
+MANUSCRIPT_FIGURE_MAX = 8 * 1024 * 1024
+_MD_IMAGE_RE = re.compile(r"!\[[^\]]*\]\(\s*(?:<([^>\n]+)>|([^\s)]+))")
+
+
+def _docx_image_rels(z):
+    """rId -> zip member ("word/media/image1.png") for embedded image parts.
+    External (linked) images and non-image parts are skipped."""
+    try:
+        rels_el = ET.fromstring(z.read("word/_rels/document.xml.rels"))
+    except (KeyError, ET.ParseError):
+        return {}
+    out = {}
+    for rel in rels_el.iter(_DOCX_REL_NS + "Relationship"):
+        if rel.get("TargetMode") == "External":
+            continue
+        target = (rel.get("Target") or "").lstrip("/")
+        if not target.startswith("word/"):
+            target = "word/" + target
+        if os.path.splitext(target)[1].lower() in MANUSCRIPT_FIGURE_EXTS:
+            out[rel.get("Id")] = target
+    return out
 
 
 def _extract_docx_text(p):
@@ -238,25 +271,89 @@ def _extract_docx_text(p):
     policy anyway, so there is nothing to gain from an HTML conversion.
     Paragraphs styled Heading1-6 are prefixed with '#'*N so the manuscript
     still gets a heading outline; anything unexpected in a paragraph's style
-    is treated as body text rather than raising."""
+    is treated as body text rather than raising. Embedded images become
+    `![](docx-media/<name>)` lines after their paragraph's text;
+    _docx_figure_assets supplies the bytes."""
     with zipfile.ZipFile(p) as z:
         xml_bytes = z.read("word/document.xml")
+        rels = _docx_image_rels(z)
     root_el = ET.fromstring(xml_bytes)
     w = _DOCX_W_NS
     lines = []
     for para in root_el.iter(w + "p"):
         text = "".join(node.text or "" for node in para.iter(w + "t"))
-        if not text.strip():
-            continue
-        level = 0
-        pstyle = para.find(f"{w}pPr/{w}pStyle")
-        if pstyle is not None:
-            val = pstyle.get(w + "val") or ""
-            m = re.fullmatch(r"Heading(\d)", val)
-            if m:
-                level = min(int(m.group(1)), 6)
-        lines.append((("#" * level + " ") if level else "") + text)
+        if text.strip():
+            level = 0
+            pstyle = para.find(f"{w}pPr/{w}pStyle")
+            if pstyle is not None:
+                val = pstyle.get(w + "val") or ""
+                m = re.fullmatch(r"Heading(\d)", val)
+                if m:
+                    level = min(int(m.group(1)), 6)
+            lines.append((("#" * level + " ") if level else "") + text)
+        for blip in para.iter(_DOCX_A_NS + "blip"):
+            target = rels.get(blip.get(_DOCX_R_NS + "embed"))
+            if target:
+                lines.append("![](%s%s)" % (DOCX_MEDIA_PREFIX, target.rsplit("/", 1)[-1]))
     return "\n\n".join(lines)
+
+
+def _docx_figure_assets(p):
+    """docx-media/<name> -> data: URI for every embedded image. Oversized
+    images are left out (they render as alt text, like any unresolved
+    figure)."""
+    assets = {}
+    with zipfile.ZipFile(p) as z:
+        for target in sorted(set(_docx_image_rels(z).values())):
+            try:
+                info = z.getinfo(target)
+            except KeyError:
+                continue
+            if info.file_size > MANUSCRIPT_FIGURE_MAX:
+                continue
+            name = target.rsplit("/", 1)[-1]
+            mime = INLINE_MIME[os.path.splitext(name)[1].lower()]
+            data = base64.b64encode(z.read(target)).decode("ascii")
+            assets[DOCX_MEDIA_PREFIX + name] = "data:%s;base64,%s" % (mime, data)
+    return assets
+
+
+def manuscript_figure_files(root, manuscript):
+    """[(href, Path)] for each image a markdown manuscript references by a
+    relative path. An href resolves against plans/ (where manuscript.md
+    lives) first, then the repo root — so both `figures/f1.png` and
+    `output/f1.png` work. Anything escaping the project root, not an image,
+    missing, or over the size cap is skipped and renders as alt text."""
+    if not manuscript or manuscript.get("format") != "markdown":
+        return []
+    root_r = root.resolve()
+    out, seen = [], set()
+    for m in _MD_IMAGE_RE.finditer(manuscript.get("content", "")):
+        href = m.group(1) or m.group(2)
+        if href in seen or href.startswith("#") or re.match(r"[a-zA-Z][a-zA-Z0-9+.-]*:", href):
+            continue
+        seen.add(href)
+        rel = urllib.parse.unquote(href)
+        if os.path.splitext(rel)[1].lower() not in MANUSCRIPT_FIGURE_EXTS:
+            continue
+        for base in (root_r / "plans", root_r):
+            try:
+                f = (base / rel).resolve()
+                f.relative_to(root_r)
+                if f.is_file() and f.stat().st_size <= MANUSCRIPT_FIGURE_MAX:
+                    out.append((href, f))
+                    break
+            except (ValueError, OSError):
+                continue
+    return out
+
+
+def _manuscript_figure_route(i, f):
+    # mtime in the route so an edited figure gets a new URL (and a new
+    # payload generation) instead of a stale browser-cache hit. "f<i>-..."
+    # can't collide with a results bundle's "r<N>" segment.
+    return "/artifact/manuscript/f%d-%d/%s" % (
+        i, f.stat().st_mtime_ns, urllib.parse.quote(f.name))
 
 
 _MANUSCRIPT_CANDIDATES = [
@@ -296,6 +393,7 @@ def _read_manuscript_file(root):
         # docx
         try:
             content = _extract_docx_text(p)
+            docx_assets = _docx_figure_assets(p)
         except (KeyError, zipfile.BadZipFile, ET.ParseError, OSError):
             return {
                 "path": rel,
@@ -305,14 +403,17 @@ def _read_manuscript_file(root):
                         "or not a standard .docx). Write your manuscript in "
                         "plans/manuscript.md instead.",
             }
-        return {
+        entry = {
             "path": rel,
             "content": content,
             "format": "docx-text",
-            "note": "Converted from Word — formatting, images, and tables are "
-                    "not preserved. Write directly in plans/manuscript.md for "
-                    "full fidelity.",
+            "note": "Converted from Word — text and figures are shown, but "
+                    "formatting and tables are not preserved. Write directly "
+                    "in plans/manuscript.md for full fidelity.",
         }
+        if docx_assets:
+            entry["assets"] = docx_assets
+        return entry
     return None
 
 
@@ -472,8 +573,17 @@ def iter_bundles(payload):
 
 
 def build_assets(root, payload):
-    """Fill bundle['assets'] (basename -> URL) and artifact inlineText."""
+    """Fill bundle['assets'] (basename -> URL), artifact inlineText, and the
+    markdown manuscript's figure map (exact href -> URL)."""
     live = payload["mode"] == "live"
+    manuscript = payload["files"].get("manuscript")
+    for i, (href, f) in enumerate(manuscript_figure_files(root, manuscript)):
+        if live:
+            url = _manuscript_figure_route(i, f)
+        else:
+            data = base64.b64encode(f.read_bytes()).decode("ascii")
+            url = "data:%s;base64,%s" % (INLINE_MIME[f.suffix.lower()], data)
+        manuscript.setdefault("assets", {})[href] = url
     for component, b in iter_bundles(payload):
         adir = root / b["dir"] / "artifacts"
         if not adir.is_dir():
@@ -509,6 +619,9 @@ def artifact_map(root, payload):
         for f in sorted(adir.iterdir()):
             if f.is_file():
                 amap["/artifact/%s/r%d/%s" % (component, b["resultsVersion"], f.name)] = f
+    manuscript = payload["files"].get("manuscript")
+    for i, (_href, f) in enumerate(manuscript_figure_files(root, manuscript)):
+        amap[_manuscript_figure_route(i, f)] = f
     return amap
 
 

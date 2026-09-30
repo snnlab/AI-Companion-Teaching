@@ -3329,6 +3329,67 @@ class TestManuscript(unittest.TestCase):
             self.assertNotEqual(h1, h2)
 
 
+class TestManuscriptFigures(unittest.TestCase):
+    PNG = b"\x89PNG\r\n\x1a\nfake"
+
+    def _project(self, d, md):
+        root = Path(d); make_project(root)
+        (root / "plans" / "manuscript.md").write_text(md, encoding="utf-8")
+        return root
+
+    def test_static_payload_embeds_figures_by_exact_href(self):
+        with tempfile.TemporaryDirectory() as d:
+            root = self._project(d, "![Fig 1](figures/f1.png)\n\n![Fig 2](<../output/my fig.png>)\n")
+            (root / "plans" / "figures").mkdir()
+            (root / "plans" / "figures" / "f1.png").write_bytes(self.PNG)
+            (root / "output").mkdir()
+            (root / "output" / "my fig.png").write_bytes(self.PNG)
+            payload = board.collect_payload(root, "remote", None)
+            board.build_assets(root, payload)
+            assets = payload["files"]["manuscript"]["assets"]
+            self.assertEqual(set(assets), {"figures/f1.png", "../output/my fig.png"})
+            self.assertTrue(assets["figures/f1.png"].startswith("data:image/png;base64,"))
+
+    def test_repo_root_fallback(self):
+        with tempfile.TemporaryDirectory() as d:
+            root = self._project(d, "![](output/f.png)\n")
+            (root / "output").mkdir()
+            (root / "output" / "f.png").write_bytes(self.PNG)
+            payload = board.collect_payload(root, "remote", None)
+            board.build_assets(root, payload)
+            self.assertIn("output/f.png", payload["files"]["manuscript"]["assets"])
+
+    def test_live_payload_routes_through_amap(self):
+        with tempfile.TemporaryDirectory() as d:
+            root = self._project(d, "![](f.png)\n")
+            (root / "plans" / "f.png").write_bytes(self.PNG)
+            payload = board.build_live_payload(root, None, None, None, None)
+            url = payload["files"]["manuscript"]["assets"]["f.png"]
+            self.assertTrue(url.startswith("/artifact/manuscript/f0-"))
+            self.assertEqual(board.artifact_map(root, payload)[url],
+                             (root / "plans" / "f.png").resolve())
+
+    def test_skips_escapes_non_images_urls_and_missing(self):
+        with tempfile.TemporaryDirectory() as outer:
+            (Path(outer) / "secret.png").write_bytes(self.PNG)
+            root = Path(outer) / "proj"; root.mkdir()
+            make_project(root)
+            (root / "plans" / "manuscript.md").write_text(
+                "![](../../secret.png) ![](https://x.example/a.png) "
+                "![](data.csv) ![](nope.png)\n", encoding="utf-8")
+            (root / "plans" / "data.csv").write_text("a,b\n", encoding="utf-8")
+            payload = board.collect_payload(root, "remote", None)
+            board.build_assets(root, payload)
+            self.assertNotIn("assets", payload["files"]["manuscript"])
+
+    def test_no_figures_leaves_payload_unchanged(self):
+        with tempfile.TemporaryDirectory() as d:
+            root = self._project(d, "# Draft\n")
+            payload = board.collect_payload(root, "remote", None)
+            board.build_assets(root, payload)
+            self.assertNotIn("assets", payload["files"]["manuscript"])
+
+
 class TestExtractDocxText(unittest.TestCase):
     """No python-docx/fixture binary needed — a .docx is just a zip of XML,
     so tests build a minimal real one in-memory."""
@@ -3368,6 +3429,37 @@ class TestExtractDocxText(unittest.TestCase):
             p = Path(d) / "m.docx"
             p.write_bytes(self._make_docx([("Kept", None), ("   ", None)]))
             self.assertEqual(board._extract_docx_text(p), "Kept")
+
+    def test_embedded_images_become_figures_with_assets(self):
+        w = self._W
+        a = "http://schemas.openxmlformats.org/drawingml/2006/main"
+        r = "http://schemas.openxmlformats.org/officeDocument/2006/relationships"
+        rel_ns = "http://schemas.openxmlformats.org/package/2006/relationships"
+        xml = (
+            f'<w:document xmlns:w="{w}" xmlns:a="{a}" xmlns:r="{r}"><w:body>'
+            '<w:p><w:r><w:t>Before.</w:t></w:r></w:p>'
+            '<w:p><w:r><w:drawing><a:graphic><a:graphicData><a:blip r:embed="rId7"/>'
+            '</a:graphicData></a:graphic></w:drawing></w:r></w:p>'
+            '<w:p><w:r><w:t>Figure 1. Caption.</w:t></w:r></w:p>'
+            '</w:body></w:document>')
+        rels = (f'<Relationships xmlns="{rel_ns}">'
+                '<Relationship Id="rId7" Type="image" Target="media/image1.png"/>'
+                '<Relationship Id="rId8" Type="image" Target="https://x/y.png" TargetMode="External"/>'
+                '</Relationships>')
+        buf = io.BytesIO()
+        with zipfile.ZipFile(buf, "w") as z:
+            z.writestr("word/document.xml", xml)
+            z.writestr("word/_rels/document.xml.rels", rels)
+            z.writestr("word/media/image1.png", b"\x89PNGfake")
+        with tempfile.TemporaryDirectory() as d:
+            root = Path(d); make_project(root)
+            (root / "plans" / "manuscript.docx").write_bytes(buf.getvalue())
+            m = board.collect_payload(root, "live", None)["files"]["manuscript"]
+            self.assertEqual(m["format"], "docx-text")
+            self.assertEqual(m["content"],
+                             "Before.\n\n![](docx-media/image1.png)\n\nFigure 1. Caption.")
+            self.assertEqual(list(m["assets"]), ["docx-media/image1.png"])
+            self.assertTrue(m["assets"]["docx-media/image1.png"].startswith("data:image/png;base64,"))
 
     def test_corrupt_docx_falls_back_to_unsupported_in_collect_payload(self):
         with tempfile.TemporaryDirectory() as d:

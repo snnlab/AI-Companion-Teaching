@@ -23,6 +23,16 @@ function escapeAttr(s: string): string {
 // default renderer emitted javascript: hrefs into dangerouslySetInnerHTML.
 const SAFE_LINK_RE = /^(https?:|mailto:)/i;
 
+// marked percent-encodes hrefs ("my fig.png" -> "my%20fig.png"); asset maps
+// are keyed by the href as the author wrote it.
+function safeDecode(s: string): string {
+  try {
+    return decodeURI(s);
+  } catch {
+    return s;
+  }
+}
+
 // breaks: true — research plans and reports are written line-oriented
 // (Serves:, Success:, sign-off lines); single newlines must render as breaks.
 // Hard-wrapped paragraphs are soft-unwrapped BEFORE parsing (v0.11), so
@@ -52,13 +62,15 @@ function makeMarked(assets?: Record<string, string>) {
         } target="_blank" rel="noopener noreferrer">${inner}</a>`;
       },
       // Reports embed figures by repo-relative path; resolve ONLY against the
-      // bundle's basename-keyed assets (same contract as artifactDisplay's
+      // payload's assets — exact href first (the manuscript's map), then
+      // basename (a results bundle's map; same contract as artifactDisplay's
       // assetUrl). Anything unresolved renders as text — the board never
       // fetches an image URL the payload did not provide.
       ...(assets
         ? {
             image({ href, title, text }: { href: string; title: string | null; text: string }) {
-              const resolved = assets[href.split("/").pop() ?? ""];
+              const resolved =
+                assets[href] ?? assets[safeDecode(href)] ?? assets[href.split("/").pop() ?? ""];
               if (!resolved) return escapeHtml(text || href);
               return `<img src="${escapeAttr(resolved)}" alt="${escapeAttr(text)}"${
                 title ? ` title="${escapeAttr(title)}"` : ""

@@ -9,6 +9,10 @@ import { outlineFromContainer, type OutlineEntry } from "../lib/outline";
 import type { ActiveFileRef } from "../lib/filesTree";
 import type { Annotation, BoardData, DocCommentAnnotation } from "../lib/types";
 
+// Always pass an assets map (even empty) so an unresolved figure renders as
+// its alt text rather than a broken <img> pointing at a relative path.
+const NO_ASSETS: Record<string, string> = {};
+
 export default function Manuscript({
   data,
   canAnnotate,
@@ -90,7 +94,7 @@ export default function Manuscript({
       data-annot-scope="manuscript"
       data-annot-section="manuscript"
     >
-      <Markdown source={manuscript.content} />
+      <Markdown source={manuscript.content} assets={manuscript.assets ?? NO_ASSETS} />
     </section>
   );
 

@@ -32,4 +32,13 @@ describe("Markdown assets image resolution", () => {
     const { container } = render(<Markdown source="![a](x.png)" />);
     expect(container.querySelector("img")).not.toBeNull();
   });
+  it("prefers an exact-href key (manuscript figures) over basename", () => {
+    const { container } = render(
+      <Markdown
+        source="![Figure 1](<figures/my fig.png>)"
+        assets={{ "figures/my fig.png": "data:image/png;base64,EXACT", "my fig.png": "data:x" }}
+      />,
+    );
+    expect(container.querySelector("img")?.getAttribute("src")).toBe("data:image/png;base64,EXACT");
+  });
 });

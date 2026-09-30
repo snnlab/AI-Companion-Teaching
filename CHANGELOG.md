@@ -1,5 +1,20 @@
 # Changelog
 
+## [Unreleased]
+
+### Added
+- **Figures in the Manuscript tab.** Image references in `plans/manuscript.md`
+  (`![caption](path.png)`) now render inline instead of as bare alt text. A
+  path resolves against `plans/` first, then the project root; anything that
+  escapes the project, isn't an image (png/jpg/gif/webp/svg), is missing, or
+  is over 8 MB still falls back to alt text. The live board serves figures
+  through the existing exact-key `/artifact/` route (mtime in the URL, so an
+  edited figure refreshes); exported/shared boards and submissions embed them
+  as data URIs. A `.docx` manuscript now carries its embedded images too, in
+  reading order. Figures get a centred, white-matted block style so plots
+  stay legible in dark mode. The starter `manuscript.md` template shows the
+  syntax.
+
 ## [0.8.0] - 2026-09-24
 
 The board had a tab for the analysis plan, the results, and machine-generated
