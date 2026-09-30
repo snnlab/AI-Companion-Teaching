@@ -334,5 +334,108 @@ class TestResponseHandling(unittest.TestCase):
         self.assertEqual(cm.exception.code, 1)
 
 
+def _data_uri(data, mime="image/png"):
+    import base64
+    return "data:%s;base64,%s" % (mime, base64.b64encode(data).decode("ascii"))
+
+
+def _envelope_with_assets(manuscript_assets, bundle_assets):
+    return {
+        "idempotencyKey": "0123456789abcdef",
+        "payload": {
+            "files": {
+                "manuscript": {"path": "plans/manuscript.md", "content": "", "assets": manuscript_assets},
+                "executionPlans": [
+                    {"component": "01-x", "versions": [], "results": [{"assets": bundle_assets}]},
+                ],
+            },
+        },
+    }
+
+
+class TestExternalizeAssets(unittest.TestCase):
+    def test_large_files_move_out_small_ones_stay(self):
+        import hashlib
+        big = os.urandom(submit.EXTERNALIZE_MIN_BYTES + 10)
+        small = b"tiny"
+        env = _envelope_with_assets({"fig.png": _data_uri(big)}, {"t.csv": _data_uri(small, "text/csv")})
+        uploads = submit.externalize_assets(env)
+        sha = hashlib.sha256(big).hexdigest()
+        self.assertEqual(list(uploads), [sha])
+        files = env["payload"]["files"]
+        self.assertEqual(files["manuscript"]["assets"]["fig.png"], "aict-asset:" + sha)
+        self.assertTrue(files["executionPlans"][0]["results"][0]["assets"]["t.csv"].startswith("data:text/csv"))
+        self.assertEqual(env["payload"]["externalAssets"][sha],
+                         {"mime": "image/png", "size": len(big), "parts": 1})
+        self.assertEqual(env["idempotencyKey"], "0123456789abcdef")
+
+    def test_part_count_follows_size(self):
+        big = b"\0" * (submit.ASSET_PART_BYTES + 1)
+        env = _envelope_with_assets({"fig.png": _data_uri(big)}, {})
+        uploads = submit.externalize_assets(env)
+        (sha,) = uploads
+        self.assertEqual(env["payload"]["externalAssets"][sha]["parts"], 2)
+
+    def test_many_small_files_move_out_until_envelope_fits(self):
+        files = {("f%d.png" % i): _data_uri(os.urandom(20 * 1024)) for i in range(200)}
+        env = _envelope_with_assets({}, files)
+        uploads = submit.externalize_assets(env)
+        self.assertGreater(len(uploads), 0)
+        self.assertLessEqual(submit._envelope_bytes(env), submit.ENVELOPE_TARGET_BYTES)
+
+    def test_nothing_to_move_leaves_no_external_assets_key(self):
+        env = _envelope_with_assets({}, {"t.csv": _data_uri(b"a,b", "text/csv")})
+        self.assertEqual(submit.externalize_assets(env), {})
+        self.assertNotIn("externalAssets", env["payload"])
+
+
+class TestUploadAssets(unittest.TestCase):
+    def setUp(self):
+        self._orig = submit._post
+        self.calls = []
+
+    def tearDown(self):
+        submit._post = self._orig
+
+    def _env_and_uploads(self, n=2):
+        env = _envelope_with_assets(
+            {("f%d.png" % i): _data_uri(os.urandom(submit.EXTERNALIZE_MIN_BYTES + i + 1)) for i in range(n)}, {})
+        return env, submit.externalize_assets(env)
+
+    def test_uploads_only_what_the_server_is_missing(self):
+        env, uploads = self._env_and_uploads(2)
+        missing = sorted(uploads)[:1]
+
+        def fake(url, token, body, ctype, timeout=120):
+            self.calls.append(url)
+            if "op=check" in url:
+                return 200, {"missing": missing}
+            return 200, {"ok": True}
+        submit._post = fake
+        with contextlib_redirect():
+            self.assertEqual(submit.upload_assets("https://cls", "tok", env, uploads), 1)
+        puts = [u for u in self.calls if "op=put" in u]
+        self.assertEqual(len(puts), 1)
+        self.assertIn("sha=%s" % missing[0], puts[0])
+
+    def test_old_server_is_detected(self):
+        env, uploads = self._env_and_uploads(1)
+        for code, body in ((404, {}), (401, {"error": "unauthorized"})):
+            submit._post = lambda *a, **k: (code, body)
+            with self.assertRaises(submit.AssetsUnsupported):
+                submit.upload_assets("https://cls", "tok", env, uploads)
+
+    def test_rejected_token_dies(self):
+        env, uploads = self._env_and_uploads(1)
+        submit._post = lambda *a, **k: (401, {"error": "invalid_token"})
+        with self.assertRaises(SystemExit):
+            submit.upload_assets("https://cls", "tok", env, uploads)
+
+
+def contextlib_redirect():
+    import contextlib
+    return contextlib.redirect_stdout(io.StringIO())
+
+
 if __name__ == "__main__":
     unittest.main()

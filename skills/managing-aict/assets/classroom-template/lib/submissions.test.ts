@@ -12,7 +12,7 @@ const { put, get, list } = vi.hoisted(() => ({
 }));
 vi.mock("@vercel/blob", () => ({ put, get, list }));
 
-import { putSubmission, advanceLatestPointer, getLatestPointer, listSubmissionsForStudent, indexShareHashOwner, resolveShareHashOwner, type StoredSubmission } from "./submissions";
+import { putSubmission, listSubmissionsForStudent, indexShareHashOwner, resolveShareHashOwner, type StoredSubmission } from "./submissions";
 
 const TOKEN = "tok-blob";
 
@@ -111,19 +111,6 @@ describe("putSubmission", () => {
       putSubmission(TOKEN, "alice", s.idempotencyKey, { ...s, serverReceivedAt: "later" }),
     ]);
     expect(results.map((r) => r.outcome).sort()).toEqual(["created", "replay"]);
-  });
-});
-
-describe("advanceLatestPointer / getLatestPointer", () => {
-  it("writes and reads the pointer as overwritable", async () => {
-    await advanceLatestPointer(TOKEN, "alice", { idempotencyKey: "abc", submittedAt: "2026-08-10T10:00:00.000Z" });
-    expect(put).toHaveBeenCalledWith(
-      "submissions/alice/_latest.json",
-      JSON.stringify({ idempotencyKey: "abc", submittedAt: "2026-08-10T10:00:00.000Z" }),
-      expect.objectContaining({ allowOverwrite: true }),
-    );
-    get.mockResolvedValue({ statusCode: 200, stream: streamOf({ idempotencyKey: "abc", submittedAt: "2026-08-10T10:00:00.000Z" }) });
-    expect(await getLatestPointer(TOKEN, "alice")).toEqual({ idempotencyKey: "abc", submittedAt: "2026-08-10T10:00:00.000Z" });
   });
 });
 

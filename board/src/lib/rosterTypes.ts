@@ -34,7 +34,9 @@ export type RosterIntegrityStatus = "passed" | "failed" | "unknown";
 export interface RosterSubmissionSummary {
   submittedAt: string;
   idempotencyKey: string;
-  integrityStatus: RosterIntegrityStatus;
+  // No longer sent by the server (the roster stopped downloading whole
+  // submissions); kept optional for older deployments.
+  integrityStatus?: RosterIntegrityStatus;
 }
 
 export interface RosterRow {
@@ -55,9 +57,12 @@ export interface RosterRow {
 export interface StudentSubmission {
   submittedAt: string;
   idempotencyKey: string;
-  integrityStatus: RosterIntegrityStatus;
-  // Full, valid BoardData — the exact shape App.tsx already renders today.
-  payload: BoardData;
+  integrityStatus?: RosterIntegrityStatus;
+  // Full, valid BoardData. The list endpoint no longer includes it (one
+  // response carrying every submission could exceed Vercel's 4.5 MB cap);
+  // the drill-in fetches it per submission with ?key=. An older deployment
+  // that still inlines it is used as-is.
+  payload?: BoardData;
 }
 
 export interface StudentSubmissions {

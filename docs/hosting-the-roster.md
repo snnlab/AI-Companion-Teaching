@@ -55,6 +55,19 @@ Hosting itself is free on Vercel's "Hobby" plan for personal, noncommercial use 
 - If your course or institution has any commercial arrangement attached, confirm whether the free plan's noncommercial terms actually apply, or whether you need a paid plan.
 - **Check with your institution or IRB before your first deploy, not after.** This server aggregates decision logs and git history from every registered student in one place — see **Data and privacy** below before you send a single token.
 
+## How big a class it handles
+
+Class size itself is not the limit: opening the dashboard reads one small summary blob whether there are 5 students or 500, and opening a student's board loads only the submission you are looking at. What the free Hobby plan meters is Vercel Blob **activity per month** — about 2,000 writes/lists, 10,000 reads, 10 GB transferred, 1 GB stored — and **exceeding any of them locks the Blob store for 30 days**, taking the server down with it. Rough costs:
+
+| Action | Writes/lists | Notes |
+|---|---|---|
+| A student submits | ~4 | plus 1 per new figure/results file (per 4 MB); unchanged files are never re-sent |
+| You open the dashboard | 1 | |
+| You open a student's board | 1 | reads the submission and its figures |
+| You leave a comment / release feedback | 1 each | |
+
+A 30-student class submitting three times a month, with a handful of comments per student, uses roughly half the monthly write budget. Around 40–50 very active students in a single month is where the Hobby plan gets tight; beyond that, use the Pro plan, where these are billed per use (writes cost about $5 per million) instead of hard-capped. Vercel emails you as you approach a Hobby limit — do not ignore it mid-semester.
+
 ## If something goes wrong
 
 **"Node not found."** Follow Step 0, then reopen your terminal.
@@ -67,7 +80,7 @@ Hosting itself is free on Vercel's "Hobby" plan for personal, noncommercial use 
 
 **`--add-student`/`--roster` says a student is already registered.** Re-running registration for an existing student **rotates their token** — it does not create a duplicate or fail quietly. If that's not what you meant to do, note that their old token now needs replacing, and send them the new one.
 
-**A submission from a student never shows up on the roster.** Ask them to re-run `/ait:submit` and read what it reports — a `401` means their token needs rotating (above), a `413` means their project is over the size limit and needs trimming, and a network error usually means the server URL is wrong or the deployment was removed.
+**A submission from a student never shows up on the roster.** Ask them to re-run `/ait:submit` and read what it reports — a `401` means their token needs rotating (above), a `413` means the plan and log text itself is over the 4.5 MB limit (figures and results files no longer count toward it — they upload separately), a `missing_assets` error means an upload was interrupted and re-running fixes it, and a network error usually means the server URL is wrong or the deployment was removed.
 
 ## New computer, or a second instructor account?
 
@@ -76,7 +89,7 @@ There is no dedicated reconnect flow yet for this template (unlike the single-pr
 ## What a student experiences
 
 1. They run `/ait:submit`. The first time, it asks for the server URL and their personal token, which they enter once; after that it's saved locally and every later `/ait:submit` just works.
-2. Before it sends anything, it shows them exactly what's included — how many components, plan versions, and results bundles, the git commit range, and the total size — and asks for explicit confirmation. It never sends silently.
+2. Before it sends anything, it shows them exactly what's included — how many components, plan versions, and results bundles, the git commit range, the total size, and how many figures/results files go up separately — and asks for explicit confirmation. It never sends silently. Figures and results files are uploaded one by one before the submission itself (large ones in 4 MB parts), and a file the server already has from an earlier submission is not sent again — so figures no longer count toward the 4.5 MB submission limit.
 3. After sending, it tells them what happened in plain language: recorded, or unchanged since last time, or a specific problem (rejected token, oversized submission, malformed data) with what to do about it. It also relays the server's own mechanical re-verification lines, so if something doesn't match what they expect (a checksum mismatch, a signing-date question), they see it immediately rather than only you seeing it later.
 
 They never get a login page or a password for this server — their only credential is the personal token, used solely by the submission command, never a browser session.
@@ -105,5 +118,5 @@ Before you deploy:
 - **The Blob store's region is fixed at creation**, exactly as for the single-project board — choose it deliberately if data residency rules apply (e.g. GDPR, a funder's data-management plan), and don't accept a default without checking.
 - **What Vercel processes:** every registered student's submitted payload (decision log, signed plan versions, results-bundle manifests and artifacts), the git-history excerpt attached to each submission, your own instructor login sessions, and basic access logs (IP addresses, rough geography, timing) for anyone who reaches the server.
 - **What the server does NOT do:** it never verifies who a student actually is beyond possession of their token (the same limitation the single-project board's sign-off trailer has — a name in a trailer, or a token in a request, is not a cryptographic identity check). It never grades, sign-off-approves, or blocks a submission for content reasons — every mechanical re-check is advisory, shown to you, never a gate on the student.
-- **Deleting a student's data.** There is no dedicated delete-one-student command yet. To remove a student entirely, delete their `roster/<studentId>.json`, `roster-token-index/<their token hash>.json`, and every `submissions/<studentId>/*` blob from the Vercel dashboard's Blob browser, or ask Claude to do it directly against the Blob store. This is not currently a one-command operation — treat it as a manual, deliberate step.
+- **Deleting a student's data.** There is no dedicated delete-one-student command yet. To remove a student entirely, delete their `roster/<studentId>.json`, `roster-token-index/<their token hash>.json`, every `submissions/<studentId>/*` blob, and every `assets/<studentId>/*` blob (their separately uploaded figures and results files) from the Vercel dashboard's Blob browser, then delete `roster-meta/summary.json` — the dashboard's cached roster, rebuilt from the remaining records on the next load. Or ask Claude to do it directly against the Blob store. This is not currently a one-command operation — treat it as a manual, deliberate step.
 - **Taking the whole server down.** Remove the Vercel project from your account (`vercel remove`, or delete it from the dashboard). This deletes the roster, every student's submitted history, and the Blob store together, irreversibly.

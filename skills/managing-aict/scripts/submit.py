@@ -18,7 +18,11 @@ environment, or server-rejection error.
 """
 
 import argparse
+import base64
+import binascii
+import copy
 import datetime
+import hashlib
 import json
 import subprocess
 import sys
@@ -31,6 +35,7 @@ from signoff_gate import normalize_plan, parse_trailer  # noqa: E402
 from board import (  # noqa: E402
     collect_payload,
     build_assets,
+    iter_bundles,
     share_hash,
     payload_files,
     find_root,
@@ -38,9 +43,21 @@ from board import (  # noqa: E402
 import classroom  # noqa: E402
 
 ENVELOPE_SCHEMA_VERSION = 1
-# Vercel's default serverless function request body limit — a soft warning
-# only; the server's own 413 is the authoritative check.
+# Vercel's serverless function request body limit — a soft warning only; the
+# server's own 413 is the authoritative check.
 SIZE_WARNING_BYTES = int(4.5 * 1024 * 1024)
+
+# Files sent outside the envelope (manuscript figures, results artifacts):
+# uploaded to /api/assets in parts no larger than this, then referenced from
+# the payload as "aict-asset:<sha256>". Mirrors ASSET_PART_BYTES in the
+# classroom server's lib/assets.ts.
+ASSET_PART_BYTES = 4 * 1024 * 1024
+ASSET_REF_PREFIX = "aict-asset:"
+# Anything this big always goes out separately...
+EXTERNALIZE_MIN_BYTES = 32 * 1024
+# ...and smaller files follow, largest first, until the envelope fits here
+# (headroom under the 4.5 MB cap for the JSON itself).
+ENVELOPE_TARGET_BYTES = int(3.5 * 1024 * 1024)
 
 
 def die(msg, code=1):
@@ -199,6 +216,83 @@ def build_envelope(root, course_id, payload=None):
     }
 
 
+def _asset_maps(payload):
+    """Every basename/href -> URL map in the payload: the manuscript's figure
+    map and each results bundle's artifact map (what build_assets fills)."""
+    maps = []
+    manuscript = payload["files"].get("manuscript")
+    if manuscript and isinstance(manuscript.get("assets"), dict):
+        maps.append(manuscript["assets"])
+    for _component, b in iter_bundles(payload):
+        if isinstance(b.get("assets"), dict):
+            maps.append(b["assets"])
+    return maps
+
+
+def _decode_data_uri(uri):
+    """(mime, bytes) for a base64 data: URI, else None."""
+    if not isinstance(uri, str) or not uri.startswith("data:"):
+        return None
+    head, sep, data = uri.partition(",")
+    if not sep or not head.endswith(";base64"):
+        return None
+    try:
+        return head[len("data:"):-len(";base64")] or "application/octet-stream", base64.b64decode(data)
+    except (ValueError, binascii.Error):
+        return None
+
+
+def _envelope_bytes(envelope):
+    return len(json.dumps(envelope, ensure_ascii=False).encode("utf-8"))
+
+
+def externalize_assets(envelope):
+    """Move the envelope's embedded files out of the JSON, in place.
+
+    Every file over EXTERNALIZE_MIN_BYTES — then smaller ones, largest first,
+    while the envelope is still over ENVELOPE_TARGET_BYTES — is replaced by
+    "aict-asset:<sha256>" and described in payload["externalAssets"].
+    Returns {sha: bytes} for the files to upload. The idempotencyKey is
+    untouched: share_hash covers the plan text, never the asset maps."""
+    payload = envelope["payload"]
+    inline = []  # (map, key, mime, data)
+    for m in _asset_maps(payload):
+        for key, uri in m.items():
+            decoded = _decode_data_uri(uri)
+            if decoded:
+                inline.append((m, key) + decoded)
+    inline.sort(key=lambda e: len(e[3]), reverse=True)
+
+    uploads = {}
+    meta = {}
+
+    def move(entry):
+        m, key, mime, data = entry
+        sha = hashlib.sha256(data).hexdigest()
+        uploads[sha] = data
+        meta[sha] = {
+            "mime": mime,
+            "size": len(data),
+            "parts": max(1, -(-len(data) // ASSET_PART_BYTES)),
+        }
+        m[key] = ASSET_REF_PREFIX + sha
+
+    rest = []
+    for entry in inline:
+        if len(entry[3]) > EXTERNALIZE_MIN_BYTES:
+            move(entry)
+        else:
+            rest.append(entry)
+    if meta:
+        payload["externalAssets"] = meta
+    for entry in rest:  # largest first
+        if _envelope_bytes(envelope) <= ENVELOPE_TARGET_BYTES:
+            break
+        move(entry)
+        payload["externalAssets"] = meta
+    return uploads
+
+
 def envelope_summary(envelope):
     payload = envelope["payload"]
     groups = payload["files"]["executionPlans"]
@@ -223,10 +317,17 @@ def envelope_summary(envelope):
     }
 
 
-def print_dry_run(envelope, warnings):
+def print_dry_run(envelope, warnings, uploads=None):
     summary = envelope_summary(envelope)
     print("Submission envelope preview (dry run — no network call made)")
     print("  size: %d bytes (%.1f KB)" % (summary["sizeBytes"], summary["sizeBytes"] / 1024.0))
+    if uploads:
+        total = sum(len(b) for b in uploads.values())
+        print(
+            "  files sent separately: %d (%.1f KB) — figures and results files, "
+            "uploaded before the envelope; ones the server already has are skipped"
+            % (len(uploads), total / 1024.0)
+        )
     print("  components: %d" % summary["components"])
     print("  analysis-plan versions: %d" % summary["versions"])
     print("  results bundles: %d" % summary["resultsBundles"])
@@ -244,10 +345,10 @@ def print_dry_run(envelope, warnings):
     print("  course id: %s" % (envelope["courseId"] or "(not configured)"))
     if summary["sizeBytes"] > SIZE_WARNING_BYTES:
         print(
-            "  WARNING: envelope exceeds ~4.5MB, Vercel's default serverless "
-            "function request body limit — the real submission may be "
-            "rejected with HTTP 413. Consider trimming large artifacts before "
-            "submitting.",
+            "  WARNING: even with its files sent separately, the envelope "
+            "exceeds ~4.5MB (Vercel's request body limit) — the plan and "
+            "log text itself is too large and the submission will be "
+            "rejected with HTTP 413.",
             file=sys.stderr,
         )
     if warnings:
@@ -274,6 +375,67 @@ def _read_error_body(exc):
         return json.loads(exc.read().decode("utf-8", "replace"))
     except (OSError, ValueError, AttributeError):
         return {}
+
+
+class AssetsUnsupported(Exception):
+    """The server predates /api/assets — submit the envelope inline instead."""
+
+
+def _post(url, token, body, content_type, timeout=120):
+    """(status, parsed-json-or-{}) for one authenticated POST."""
+    req = urllib.request.Request(
+        url, data=body, method="POST",
+        headers={"Authorization": "Bearer %s" % token, "Content-Type": content_type},
+    )
+    try:
+        with urllib.request.urlopen(req, timeout=timeout) as resp:
+            raw = resp.read().decode("utf-8", "replace")
+            return resp.getcode(), (json.loads(raw) if raw else {})
+    except urllib.error.HTTPError as e:
+        return e.code, _read_error_body(e)
+
+
+def upload_assets(url, token, envelope, uploads):
+    """Send every file the server does not already hold, part by part.
+    Raises AssetsUnsupported for a server without /api/assets."""
+    if not uploads:
+        return 0
+    base = url.rstrip("/") + "/api/assets"
+    meta = envelope["payload"]["externalAssets"]
+    try:
+        code, data = _post(
+            base + "?op=check", token,
+            json.dumps({"assets": [{"sha": s, "parts": meta[s]["parts"]} for s in uploads]}).encode("utf-8"),
+            "application/json",
+        )
+    except (urllib.error.URLError, OSError):
+        die("Classroom server unreachable (the server may be down, or the URL may be wrong).")
+    # A server without the route answers 404 — or, before its login gate
+    # learned the route, 401 {"error": "unauthorized"} (the instructor-cookie
+    # gate). A rejected student token is 401 {"error": "invalid_token"}.
+    if code in (404, 405) or (code == 401 and data.get("error") != "invalid_token"):
+        raise AssetsUnsupported()
+    if code == 401:
+        _handle_error_response(401, data)
+    if code != 200 or not isinstance(data.get("missing"), list):
+        die("Classroom server returned HTTP %s while checking files: %s" % (code, json.dumps(data)[:300]))
+    missing = [s for s in data["missing"] if s in uploads]
+    for n, sha in enumerate(missing, 1):
+        blob = uploads[sha]
+        parts = meta[sha]["parts"]
+        print("  uploading file %d/%d (%.1f KB)" % (n, len(missing), len(blob) / 1024.0))
+        for i in range(parts):
+            chunk = blob[i * ASSET_PART_BYTES:(i + 1) * ASSET_PART_BYTES]
+            qs = "?op=put&sha=%s&part=%d&parts=%d" % (sha, i, parts)
+            if parts > 1:
+                qs += "&partSha=%s" % hashlib.sha256(chunk).hexdigest()
+            try:
+                code, data = _post(base + qs, token, chunk, "application/octet-stream")
+            except (urllib.error.URLError, OSError):
+                die("Upload interrupted — re-run /ait:submit; files already sent are not sent again.")
+            if code != 200:
+                die("Classroom server rejected a file upload (HTTP %s): %s" % (code, json.dumps(data)[:300]))
+    return len(missing)
 
 
 def submit_envelope(url, token, envelope):
@@ -338,6 +500,11 @@ def _handle_error_response(code, data):
             "Submission too large: the server's limit is %s bytes."
             % data.get("limitBytes", "?")
         )
+    if code == 400 and data.get("error") == "missing_assets":
+        die(
+            "The server has not received %d of this submission's files. "
+            "Re-run /ait:submit to upload them again." % len(data.get("missing") or [])
+        )
     if code == 400 and data.get("error") == "malformed_envelope":
         die(
             "Server rejected the submission as malformed: %s"
@@ -374,7 +541,8 @@ def main():
         payload = collect_payload(root, "submission", None)
         warnings = preflight_warnings(payload)
         envelope = build_envelope(root, course_id, payload=payload)
-        print_dry_run(envelope, warnings)
+        uploads = externalize_assets(envelope)
+        print_dry_run(envelope, warnings, uploads)
         sys.exit(0)
 
     url = args.url or (cfg.get("serverUrl") if cfg else None)
@@ -400,7 +568,21 @@ def main():
     for w in preflight_warnings(payload):
         print("submit: pre-flight warning: %s" % w, file=sys.stderr)
 
-    envelope = build_envelope(root, course_id, payload=payload)
+    inline_envelope = build_envelope(root, course_id, payload=payload)
+    envelope = copy.deepcopy(inline_envelope)
+    uploads = externalize_assets(envelope)
+    try:
+        upload_assets(url, token, envelope, uploads)
+    except AssetsUnsupported:
+        # An older classroom server: everything inline, as before.
+        envelope = inline_envelope
+        if _envelope_bytes(envelope) > SIZE_WARNING_BYTES:
+            print(
+                "submit: this classroom server does not accept separately "
+                "uploaded files yet, and the submission is over its 4.5MB "
+                "limit — ask your instructor to update the server.",
+                file=sys.stderr,
+            )
     submit_envelope(url, token, envelope)
 
 

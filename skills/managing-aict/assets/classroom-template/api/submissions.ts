@@ -3,14 +3,22 @@
 // Only POST is implemented here. Listing is intentionally split across two
 // other routes rather than a GET on this one (documented choice — the task
 // brief leaves this open): GET /api/roster gives the instructor a
-// per-student SUMMARY (last submission + count + similarity flags); GET
-// /api/submissions/:studentId gives one student's FULL history. Neither
+// per-student SUMMARY (last submission + count); GET
+// /api/submissions/:studentId lists one student's submissions, and
+// ?key= returns one of them in full. Neither
 // needs a plain GET /api/submissions, so it 405s.
 import type { VercelRequest, VercelResponse } from "@vercel/node";
 import { SECURITY_HEADERS } from "../lib/gate.js";
 import { validateEnvelopeShape, validateEnvelopeSize } from "../lib/validate.js";
 import { resolveToken } from "../lib/roster.js";
-import { putSubmission, advanceLatestPointer, indexShareHashOwner, type StoredSubmission } from "../lib/submissions.js";
+import {
+  putSubmission,
+  indexShareHashOwner,
+  recordSubmissionInIndex,
+  type StoredSubmission,
+} from "../lib/submissions.js";
+import { collectAssetRefs, parseExternalAssets, verifyAsset } from "../lib/assets.js";
+import { updateSummary } from "../lib/rosterSummary.js";
 import { reverifySubmission } from "../lib/reverify.js";
 
 export interface RunResult { status: number; json: unknown }
@@ -59,6 +67,23 @@ export async function run(
   const studentId = await resolveToken(blobToken, pepper, token);
   if (!studentId) return { status: 401, json: { error: "invalid_token" } };
 
+  // Files sent outside the envelope (submit.py uploads them to /api/assets
+  // first): every reference must be declared, and every declared file must
+  // already be stored under this student and hash to its name. This is a
+  // transport check, not a content judgment — it is what lets reverify
+  // treat a reference's sha as the file's recomputed checksum.
+  const external = parseExternalAssets(envelope.payload.externalAssets);
+  if (!external.ok) return { status: 400, json: { error: "malformed_envelope", detail: external.error } };
+  const undeclared = collectAssetRefs(envelope.payload).filter((sha) => !(sha in external.value));
+  if (undeclared.length > 0) {
+    return { status: 400, json: { error: "malformed_envelope", detail: `undeclared asset references: ${undeclared.join(", ")}` } };
+  }
+  const missingAssets: string[] = [];
+  for (const [sha, meta] of Object.entries(external.value)) {
+    if (!(await verifyAsset(blobToken, studentId, sha, meta.parts))) missingAssets.push(sha);
+  }
+  if (missingAssets.length > 0) return { status: 400, json: { error: "missing_assets", missing: missingAssets } };
+
   // Content-level issues (checksum mismatches, malformed trailers, timing
   // anomalies) are NEVER a rejection reason — only a malformed/oversized
   // ENVELOPE is (handled above). This mirrors results.py's own "advisory,
@@ -99,9 +124,20 @@ export async function run(
     // it could regress "latest" backward if an older, identical-content
     // submission is retried after a newer, different submission already
     // became this student's latest. See submissions.ts's putSubmission doc.
-    await advanceLatestPointer(blobToken, studentId, {
+    const submissionCount = await recordSubmissionInIndex(blobToken, studentId, {
       idempotencyKey: envelope.idempotencyKey,
       submittedAt: envelope.submittedAt,
+    });
+    // The roster summary the dashboard reads. A student it does not know
+    // (registered before it was built, somehow) drops it for a rebuild.
+    await updateSummary(blobToken, (s) => {
+      const row = s.students[studentId];
+      if (!row) return false;
+      const newer = !row.lastSubmission
+        || Date.parse(envelope.submittedAt) >= Date.parse(row.lastSubmission.submittedAt);
+      if (newer) row.lastSubmission = { submittedAt: envelope.submittedAt, idempotencyKey: envelope.idempotencyKey };
+      row.submissionCount = submissionCount;
+      return true;
     });
     // Lets GET/POST /api/comments resolve this submission's shareHash back to
     // a studentId (see lib/submissions.ts's indexShareHashOwner) — written

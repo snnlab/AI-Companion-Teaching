@@ -75,39 +75,81 @@ describe("GET /api/roster", () => {
     expect(body.students[0]).toMatchObject({ studentId: "alice", displayName: "Alice", lastSubmission: null, submissionCount: 0 });
   });
 
-  it("surfaces the freshest results manifest's integrityStatus", async () => {
-    list.mockResolvedValueOnce({ blobs: [{ pathname: "roster/alice.json" }], hasMore: false }); // listRoster
+  it("answers from the roster summary alone when it exists — nothing per student", async () => {
+    list.mockResolvedValue({ blobs: [], hasMore: false });
+    get.mockImplementation(async (pathname: string) => {
+      if (pathname === "roster-meta/summary.json") {
+        return {
+          statusCode: 200,
+          stream: streamOf({
+            version: 1,
+            students: {
+              alice: { displayName: "Alice", lastSubmission: { submittedAt: "2026-08-19T00:00:00.000Z", idempotencyKey: "key1" }, submissionCount: 3 },
+              bob: { displayName: "Bob", lastSubmission: null, submissionCount: 0 },
+            },
+          }),
+          blob: { etag: "e1" },
+        };
+      }
+      return null;
+    });
+
+    const r = await run("GET", authedHeaders(), undefined, ENV, NOW);
+    const rows = (r.json as { students: Record<string, unknown>[] }).students;
+    expect(rows.map((x) => x.displayName)).toEqual(["Alice", "Bob"]);
+    expect(rows[0]).toMatchObject({ studentId: "alice", submissionCount: 3, lastSubmission: { idempotencyKey: "key1" } });
+    expect(list).not.toHaveBeenCalled();
+    expect(get.mock.calls.map((c) => c[0])).toEqual(["roster-meta/summary.json", "roster-meta/last-viewed.json"]);
+  });
+
+  it("registering a student adds them to an existing summary with a conditional write", async () => {
+    get.mockImplementation(async (pathname: string) => {
+      if (pathname === "roster-meta/summary.json") {
+        return { statusCode: 200, stream: streamOf({ version: 1, students: {} }), blob: { etag: "e1" } };
+      }
+      return null;
+    });
+    await run("POST", authedHeaders(), { studentId: "carol", displayName: "Carol" }, ENV, NOW);
+    const w = put.mock.calls.find((c) => c[0] === "roster-meta/summary.json");
+    expect(w![2]).toMatchObject({ ifMatch: "e1" });
+    expect(JSON.parse(w![1] as string).students.carol).toEqual({ displayName: "Carol", lastSubmission: null, submissionCount: 0 });
+  });
+
+  it("counts a pre-index student's submissions once and writes the index back", async () => {
+    list.mockImplementation(async (opts: { prefix: string }) => {
+      if (opts.prefix === "roster/") return { blobs: [{ pathname: "roster/alice.json" }], hasMore: false };
+      if (opts.prefix === "submissions/alice/") {
+        return {
+          blobs: [
+            { pathname: "submissions/alice/key1.json" },
+            { pathname: "submissions/alice/key2.json" },
+            { pathname: "submissions/alice/_latest.json" },
+          ],
+          hasMore: false,
+        };
+      }
+      return { blobs: [], hasMore: false };
+    });
     get.mockImplementation(async (pathname: string) => {
       if (pathname === "roster/alice.json") {
         return { statusCode: 200, stream: streamOf({ studentId: "alice", displayName: "Alice", tokenHash: "h", createdAt: "x" }) };
       }
       if (pathname === "submissions/alice/_latest.json") {
-        return { statusCode: 200, stream: streamOf({ idempotencyKey: "key1", submittedAt: "2026-08-19T00:00:00.000Z" }) };
+        return { statusCode: 200, stream: streamOf({ idempotencyKey: "key2", submittedAt: "2026-08-20T00:00:00.000Z" }) };
       }
-      if (pathname === "submissions/alice/key1.json") {
-        return {
-          statusCode: 200,
-          stream: streamOf({
-            studentId: "alice", submittedAt: "2026-08-19T00:00:00.000Z", idempotencyKey: "key1", reverify: [],
-            payload: {
-              files: {
-                executionPlans: [
-                  { component: "01-x", results: [{ manifest: { capturedAt: "2026-08-18 10:00", integrity: { status: "passed" } } }] },
-                ],
-              },
-            },
-          }),
-        };
+      const m = pathname.match(/^submissions\/alice\/(key\d)\.json$/);
+      if (m) {
+        const at = m[1] === "key1" ? "2026-08-19T00:00:00.000Z" : "2026-08-20T00:00:00.000Z";
+        return { statusCode: 200, stream: streamOf({ studentId: "alice", submittedAt: at, idempotencyKey: m[1], reverify: [], payload: {} }) };
       }
-      return null;
+      return null; // no _index.json yet
     });
-    list.mockResolvedValueOnce({ blobs: [{ pathname: "submissions/alice/key1.json" }], hasMore: false }); // listSubmissionsForStudent
 
     const r = await run("GET", authedHeaders(), undefined, ENV, NOW);
-    const body = r.json as { students: Record<string, unknown>[] };
-    const row = body.students[0];
-    expect((row.lastSubmission as Record<string, unknown>).integrityStatus).toBe("passed");
-    expect(row.submissionCount).toBe(1);
+    const row = (r.json as { students: Record<string, unknown>[] }).students[0];
+    expect(row.submissionCount).toBe(2);
+    const indexWrite = put.mock.calls.find((c) => c[0] === "submissions/alice/_index.json");
+    expect(JSON.parse(indexWrite![1] as string).map((m: { idempotencyKey: string }) => m.idempotencyKey)).toEqual(["key2", "key1"]);
   });
 
   it("flags a row isNewSinceLastView when its submission postdates the instructor's last visit, and clears on the next visit", async () => {
@@ -174,6 +216,7 @@ describe("GET /api/roster", () => {
     const lastViewedUtc = "2026-08-24T17:00:00.000Z"; // later in real time
     list.mockImplementation(async (opts: { prefix: string }) => {
       if (opts.prefix === "roster/") return { blobs: [{ pathname: "roster/alice.json" }], hasMore: false };
+      if (opts.prefix === "submissions/alice/") return { blobs: [{ pathname: "submissions/alice/key1.json" }], hasMore: false };
       return { blobs: [], hasMore: false };
     });
     get.mockImplementation(async (pathname: string) => {
@@ -191,6 +234,7 @@ describe("GET /api/roster", () => {
     });
     const r = await run("GET", authedHeaders(), undefined, ENV, NOW);
     const row = (r.json as { students: Record<string, unknown>[] }).students[0];
+    expect(row.lastSubmission).not.toBeNull();
     expect(row.isNewSinceLastView).toBe(false);
   });
 });

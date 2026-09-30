@@ -22,7 +22,8 @@ Submit everything under `plans/` to your instructor's classroom server, where th
    - **Success (submission created)** — tell the student it was recorded, and relay the server's reverification lines one by one so any `mismatch`/`flag` is visible immediately, not buried.
    - **Replay (identical content already submitted)** — tell the student nothing new was sent because the content is unchanged since their last submission; still relay any reverification lines.
    - **Token rejected (401)** — tell the student their token was rejected; they need a fresh one from the instructor. Do not retry with the same token.
-   - **Payload too large (413)** — tell the student which size limit was hit and suggest trimming large artifacts (e.g. large embedded images) before retrying.
+   - **Payload too large (413)** — figures and results files upload separately and do not count toward the limit, so this means the plan/log text itself is over 4.5 MB; tell the student which limit was hit.
+   - **Files not received (`missing_assets`)** — an upload was interrupted; re-running `/ait:submit` resends only what is missing.
    - **Malformed envelope (400)** — relay the server's detail message; this points at a bug in the submission format, not something the student can fix by editing plan content — mention it if it recurs.
    - **Network error** — tell the student the server may be unreachable or the URL may be wrong; suggest checking the URL with the instructor.
 

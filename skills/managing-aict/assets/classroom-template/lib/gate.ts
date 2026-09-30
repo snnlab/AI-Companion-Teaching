@@ -35,6 +35,11 @@ export function gateDecision(
   // POST/DELETE /api/push-subscribe — bearer-only (the student's own token),
   // same reasoning as /api/my-comments.
   if (pathname === "/api/push-subscribe") return { action: "allow" };
+  // /api/assets — POST is the student's bearer upload of a submission's
+  // files; GET is instructor-only and api/assets.ts checks the session
+  // cookie itself (same split as /api/comments). Keep in sync with
+  // middleware.ts's isBearerTokenRoute.
+  if (pathname === "/api/assets") return { action: "allow" };
   // The student feedback page and its assets: a static shell with no
   // instructor session and no server-rendered secret. It authenticates its
   // own /api/my-comments and /api/push-subscribe fetches with the student's

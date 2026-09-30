@@ -21,6 +21,10 @@ export interface BoardData {
   // start blank (the roster server passes its COURSE_INSTRUCTOR_NAME here).
   // A value the reviewer has already typed on this device still wins.
   defaultReviewer?: string;
+  // hosted mode, set only by the roster drill-in: a saved comment is NOT yet
+  // visible to the student until the instructor releases it, so the
+  // post-save banner points at the release button instead.
+  rosterDrill?: boolean;
   projectId?: string; // live: stable server identity (draft storage + reconnect)
   boardToken?: string; // live: per-boot token required on mutating routes
   bootId?: string; // live: per-boot identity seeding the reconnect baseline (excluded from generation)

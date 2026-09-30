@@ -1,5 +1,53 @@
 # Changelog
 
+## [0.10.0] - 2026-09-30
+
+Scales the classroom roster server: the dashboard and the drill-in no longer
+download whole submissions, and figures no longer count toward Vercel's 4.5 MB
+body cap. **Instructors: redeploy the server** (refresh the deploy directory
+from the template, regenerate the dashboard page, `--deploy`). Students get the
+new `submit.py` with the plugin update; an old `submit.py` still works against
+the new server, and the new one falls back to the old inline upload against an
+old server.
+
+### Changed
+- **Figures and results files upload separately.** `submit.py` moves every
+  embedded file over 32 KB (and smaller ones, largest first, until the envelope
+  is under 3.5 MB) out of the JSON and uploads it to a new `/api/assets` route
+  first, in parts of at most 4 MB, content-addressed by sha256 and scoped per
+  student. The payload keeps `aict-asset:<sha256>` references plus
+  `payload.externalAssets` metadata. Files the server already holds are skipped,
+  so a resubmission sends only what changed. The server hashes every part it
+  receives, verifies a multi-part file's whole hash once (then keeps a marker),
+  and rejects a submission referencing a missing file (`missing_assets`) — so
+  reverify can use a reference's sha as the recomputed checksum. A 9.6 MB
+  submission (two large figures) that previously got HTTP 413 now goes through.
+- **The dashboard reads one blob.** `GET /api/roster` answers from
+  `roster-meta/summary.json` (name, last submission, count per student), kept
+  current by ETag-conditional writes on submit and registration, and rebuilt
+  from the per-student records whenever it is missing — deleting it is always
+  safe. Measured on 50 students × 4 submissions: 351 reads / 51 MB / 52
+  writes+lists per page load before, 2 reads / 7.6 KB / 1 write after (the
+  first load after upgrading pays the old cost once while it builds the
+  summary and per-student indexes).
+- **The drill-in loads one submission at a time.** `GET
+  /api/submissions/:studentId` returns metadata from a new
+  `submissions/<id>/_index.json`; `?key=` returns one submission. The single
+  response carrying every submission could exceed the 4.5 MB response cap, making
+  a student with several large submissions impossible to open. Switching
+  submissions keeps the current tab.
+- **Times on the roster screens show in the viewer's local time.** Submission
+  times carried the student's offset and the release time the server's UTC, so
+  the drill-in panel showed them on two different clocks.
+- **The post-save banner in a roster drill-in** now says the comment is saved
+  but not yet visible, and points to "학생에게 피드백 보내기"; the old wording
+  ("visible to everyone with this link") was right only for `--publish-web`.
+- Replaying an identical submission no longer compares the asset maps (inline
+  vs referenced files is transport, not content), so a resend from a new client
+  of an old client's submission is a replay, not a 409.
+- `submissions/<id>/_latest.json` is no longer written or read; the roster row
+  no longer carries `integrityStatus` (nothing rendered it).
+
 ## [0.9.0] - 2026-09-30
 
 Renamed from AICT to **AITCW (AI Teaching Companion Workspace)**. The plugin

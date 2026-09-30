@@ -1189,8 +1189,9 @@ export default function App({ data }: { data: BoardData }) {
         )}
         {hosted && savedOnce && !saveError && (
           <div className="border-t border-green-200 dark:border-green-900 bg-green-50 dark:bg-green-950 px-5 py-1.5 text-center text-xs text-green-800 dark:text-green-300">
-            Sent — visible to everyone with this link; the student picks up
-            comments in Claude Code
+            {data.rosterDrill
+              ? "저장되었습니다 — 아직 학생에게는 보이지 않습니다. 검토를 마치면 왼쪽 아래 '학생에게 피드백 보내기'를 눌러 전달하세요."
+              : "Sent — visible to everyone with this link; the student picks up comments in Claude Code"}
           </div>
         )}
         {isTouch && (

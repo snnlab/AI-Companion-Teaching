@@ -1,16 +1,24 @@
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import App from "../App";
 import type {
   RosterData,
   StudentFetchState,
   StudentSubmission,
 } from "../lib/rosterTypes";
+import type { BoardData } from "../lib/types";
+import { hydrateExternalAssets, rosterFetchPart } from "../lib/externalAssets";
 
 type SortKey = "name" | "submitted";
 type SortDir = "asc" | "desc";
 
-function fmtDate(iso: string): string {
-  return iso.length >= 16 ? iso.slice(0, 16).replace("T", " ") : iso;
+// Shown in the VIEWER's local time. Timestamps arrive with mixed offsets —
+// submittedAt carries the student's own offset (+09:00), releasedAt is the
+// server's UTC 'Z' — so slicing the raw string showed them on two clocks.
+export function fmtDate(iso: string): string {
+  const d = new Date(iso);
+  if (Number.isNaN(d.getTime())) return iso.length >= 16 ? iso.slice(0, 16).replace("T", " ") : iso;
+  const p = (n: number) => String(n).padStart(2, "0");
+  return `${d.getFullYear()}-${p(d.getMonth() + 1)}-${p(d.getDate())} ${p(d.getHours())}:${p(d.getMinutes())}`;
 }
 
 function sortRows(rows: RosterData["students"], key: SortKey, dir: SortDir) {
@@ -210,16 +218,54 @@ function StudentBoard({
 }) {
   const [idx, setIdx] = useState(0);
   const sub = submissions[Math.min(idx, submissions.length - 1)] ?? null;
+  // One submission's payload at a time, fetched when it is selected (with
+  // its separately-stored files resolved), and kept for the session.
+  const [loaded, setLoaded] = useState<Record<string, BoardData>>({});
+  const [loadError, setLoadError] = useState<string | null>(null);
+  const payload = sub ? (loaded[sub.idempotencyKey] ?? null) : null;
+
+  useEffect(() => {
+    if (!sub || loaded[sub.idempotencyKey]) return;
+    let cancelled = false;
+    setLoadError(null);
+    (async () => {
+      try {
+        let raw = sub.payload ?? null;
+        if (!raw) {
+          const qs = new URLSearchParams({ key: sub.idempotencyKey });
+          const res = await fetch(`/api/submissions/${encodeURIComponent(studentId)}?${qs.toString()}`, {
+            credentials: "include",
+          });
+          if (!res.ok) throw new Error(`HTTP ${res.status}`);
+          raw = ((await res.json()) as { payload: BoardData }).payload;
+        }
+        const hydrated = await hydrateExternalAssets(raw, studentId, rosterFetchPart(studentId));
+        if (!cancelled) setLoaded((m) => ({ ...m, [sub.idempotencyKey]: hydrated }));
+      } catch (e) {
+        if (!cancelled) setLoadError(`Couldn't load this submission (${e instanceof Error ? e.message : "error"}).`);
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [sub, studentId, loaded]);
+
   // A submission's payload comes off the wire tagged mode: "submission"; the
   // roster overrides it to "hosted" so App's hosted-comment machinery (the
   // /api/comments post/fetch wiring, reviewer-name persistence) fires
   // unmodified — same reasoning as before this file was simplified.
+  // While another submission loads, keep the one on screen mounted so App
+  // keeps its current tab and scroll instead of resetting to Tracker.
+  const lastShown = useRef<BoardData | null>(null);
+  if (payload) lastShown.current = payload;
+  const shown = payload ?? lastShown.current;
+  const switching = !!sub && !payload && !!shown;
   const boardData = useMemo(
     () =>
-      sub
-        ? { ...sub.payload, mode: "hosted" as const, defaultReviewer: sub.payload.defaultReviewer ?? defaultReviewer }
+      shown
+        ? { ...shown, mode: "hosted" as const, rosterDrill: true, defaultReviewer: shown.defaultReviewer ?? defaultReviewer }
         : null,
-    [sub, defaultReviewer],
+    [shown, defaultReviewer],
   );
 
   return (
@@ -250,6 +296,11 @@ function StudentBoard({
             ))}
           </div>
         )}
+        {switching && (
+          <p className="mt-1 text-[11px] text-stone-500 dark:text-stone-400">
+            {loadError ?? "Loading this submission…"}
+          </p>
+        )}
         {sub && (
           <SendFeedbackButton
             key={sub.idempotencyKey}
@@ -260,6 +311,12 @@ function StudentBoard({
       </div>
       {sub && boardData ? (
         <App data={boardData} />
+      ) : sub ? (
+        <div className="flex min-h-screen items-center justify-center bg-stone-50 dark:bg-stone-950">
+          <p className="text-sm text-stone-500 dark:text-stone-400">
+            {loadError ?? "Loading this submission…"}
+          </p>
+        </div>
       ) : (
         <div className="flex min-h-screen items-center justify-center bg-stone-50 dark:bg-stone-950">
           <p className="text-sm text-stone-500 dark:text-stone-400">

@@ -5,14 +5,16 @@ function streamOf(obj: unknown): ReadableStream<Uint8Array> {
   return new ReadableStream({ start(c) { c.enqueue(bytes); c.close(); } });
 }
 
-const { put, get, list, del } = vi.hoisted(() => ({
+const { put, get, list, del, head } = vi.hoisted(() => ({
   put: vi.fn(async (_pathname: string, _body: string, _options?: Record<string, unknown>) => ({})),
   get: vi.fn(),
   list: vi.fn(),
   del: vi.fn(async (_pathname: string, _options?: Record<string, unknown>) => ({})),
+  head: vi.fn(),
 }));
-vi.mock("@vercel/blob", () => ({ put, get, list, del }));
+vi.mock("@vercel/blob", () => ({ put, get, list, del, head }));
 
+import { createHash } from "node:crypto";
 import { run } from "./submissions";
 import { hashToken } from "../lib/roster";
 import { MAX_ENVELOPE_BYTES } from "../lib/validate";
@@ -47,12 +49,56 @@ function mockRosterAndSubmissionStore() {
     }
     return null;
   });
-  put.mockImplementation(async (pathname: string, body: string) => {
-    if (submissions.has(pathname)) throw new Error("already exists");
+  put.mockImplementation(async (pathname: string, body: string, options?: Record<string, unknown>) => {
+    if (submissions.has(pathname) && options?.allowOverwrite === false) throw new Error("already exists");
     submissions.set(pathname, JSON.parse(body));
     return {};
   });
+  list.mockResolvedValue({ blobs: [], hasMore: false });
+  head.mockImplementation(async (pathname: string) => {
+    if (!storedAssets.has(pathname)) throw new Error("not found");
+    return { pathname };
+  });
   return submissions;
+}
+
+// Asset parts already uploaded through /api/assets (only presence matters
+// here: a single-part asset was hash-checked at upload).
+const storedAssets = new Set<string>();
+
+const PNG_SHA = createHash("sha256").update("png-bytes").digest("hex");
+
+function envelopeWithExternalFigure(externalAssets: Record<string, unknown>) {
+  return goodEnvelope({
+    payload: {
+      files: {
+        decisionLog: { content: "" },
+        reviews: [],
+        executionPlans: [
+          {
+            component: "01-x",
+            versions: [],
+            results: [
+              {
+                resultsVersion: 1,
+                assets: { "fig.png": `aict-asset:${PNG_SHA}` },
+                manifest: {
+                  capturedAt: "2026-08-05 10:00",
+                  artifacts: [{ id: "a1", file: "artifacts/fig.png", source: { sha256: PNG_SHA } }],
+                  metrics: [],
+                  integrity: {
+                    status: "passed",
+                    checks: ["checksums", "artifacts-present", "artifact-refs", "findings-sourced"].map((name) => ({ name, verdict: "pass" })),
+                  },
+                },
+              },
+            ],
+          },
+        ],
+      },
+      externalAssets,
+    },
+  });
 }
 
 beforeEach(() => {
@@ -92,7 +138,7 @@ describe("POST /api/submissions", () => {
     expect((r.json as Record<string, unknown>).error).toBe("malformed_envelope");
   });
 
-  it("accepts a well-formed envelope: 201 created with a reverify array, and advances the latest pointer", async () => {
+  it("accepts a well-formed envelope: 201 created with a reverify array, and indexes it", async () => {
     mockRosterAndSubmissionStore();
     const r = await run("POST", { authorization: `Bearer ${STUDENT_TOKEN}` }, goodEnvelope(), ENV);
     expect(r.status).toBe(201);
@@ -101,8 +147,8 @@ describe("POST /api/submissions", () => {
     expect(body.submissionId).toBe("0123456789abcdef");
     expect(Array.isArray(body.reverify)).toBe(true);
 
-    const pointerCall = put.mock.calls.find((c) => c[0] === "submissions/alice/_latest.json");
-    expect(pointerCall).toBeTruthy();
+    const indexCall = put.mock.calls.find((c) => c[0] === "submissions/alice/_index.json");
+    expect(indexCall).toBeTruthy();
   });
 
   it("replays an identical resubmission as 200 with the PREVIOUSLY computed reverify, and does not re-advance the pointer", async () => {
@@ -153,6 +199,48 @@ describe("POST /api/submissions", () => {
     const body = r.json as { reverify: { check: string; status: string }[] };
     const integrityCheck = body.reverify.find((c) => c.check === "integrity:01-x r1");
     expect(integrityCheck?.status).toBe("mismatch"); // recomputed "failed" vs sealed "passed"
+  });
+
+  it("records the submission in the index", async () => {
+    const store = mockRosterAndSubmissionStore();
+    await run("POST", { authorization: `Bearer ${STUDENT_TOKEN}` }, goodEnvelope(), ENV);
+    expect(store.get("submissions/alice/_index.json")).toEqual([
+      { idempotencyKey: "0123456789abcdef", submittedAt: "2026-08-20T10:00:00-04:00" },
+    ]);
+  });
+
+  it("rejects a submission whose separately-uploaded file is not stored yet", async () => {
+    storedAssets.clear();
+    mockRosterAndSubmissionStore();
+    const r = await run(
+      "POST",
+      { authorization: `Bearer ${STUDENT_TOKEN}` },
+      envelopeWithExternalFigure({ [PNG_SHA]: { mime: "image/png", size: 9, parts: 1 } }),
+      ENV,
+    );
+    expect(r).toEqual({ status: 400, json: { error: "missing_assets", missing: [PNG_SHA] } });
+  });
+
+  it("rejects an asset reference the envelope does not declare", async () => {
+    mockRosterAndSubmissionStore();
+    const r = await run("POST", { authorization: `Bearer ${STUDENT_TOKEN}` }, envelopeWithExternalFigure({}), ENV);
+    expect(r.status).toBe(400);
+    expect((r.json as Record<string, unknown>).error).toBe("malformed_envelope");
+  });
+
+  it("accepts a stored external file and reverifies its checksum from the reference", async () => {
+    storedAssets.clear();
+    storedAssets.add(`assets/alice/${PNG_SHA}/0`);
+    mockRosterAndSubmissionStore();
+    const r = await run(
+      "POST",
+      { authorization: `Bearer ${STUDENT_TOKEN}` },
+      envelopeWithExternalFigure({ [PNG_SHA]: { mime: "image/png", size: 9, parts: 1 } }),
+      ENV,
+    );
+    expect(r.status).toBe(201);
+    const check = (r.json as { reverify: { check: string; status: string }[] }).reverify.find((c) => c.check === "integrity:01-x r1");
+    expect(check?.status).toBe("match");
   });
 
   it("rejects a GET with 405", async () => {

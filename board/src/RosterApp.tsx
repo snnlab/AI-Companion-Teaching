@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useState } from "react";
-import Roster from "./views/Roster";
+import Roster, { fmtDate } from "./views/Roster";
 import ThemeToggle from "./components/ThemeToggle";
 import type { RosterFetchState } from "./lib/rosterTypes";
 
@@ -98,7 +98,7 @@ export default function RosterApp() {
               {state.data.course.name ?? state.data.course.id}
             </div>
             <div className="text-[11px] text-stone-400 dark:text-stone-500">
-              AITCW roster · generated {state.data.generatedAt.slice(0, 16)}
+              AITCW roster · generated {fmtDate(state.data.generatedAt)}
             </div>
           </div>
           <div className="flex items-center gap-2">

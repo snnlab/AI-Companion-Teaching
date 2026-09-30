@@ -85,14 +85,23 @@ export interface IntegrityResult { status: "passed" | "failed"; checkedAt: strin
 // "data:<mime>;base64,<data>"). `file` is the manifest-relative path (e.g.
 // "artifacts/figure1.png" per results.py's copy command); only the basename
 // is used to look it up, matching build_assets()'s own basename keying.
-function assetBytes(assets: Record<string, string>, file: string): Buffer | null {
+//
+// Returns the sha256 of the artifact's bytes. An `aict-asset:<sha>` value is
+// a file submit.py uploaded separately; api/submissions.ts only accepts a
+// submission once every such file is stored and hashes to its name, so the
+// reference's sha IS the recomputed hash of the bytes the server holds.
+function assetSha(assets: Record<string, string>, file: string): string | null {
   const base = file.split("/").pop() ?? file;
   const uri = assets[base];
   if (!uri) return null;
+  if (uri.startsWith("aict-asset:")) {
+    const sha = uri.slice("aict-asset:".length);
+    return /^[0-9a-f]{64}$/.test(sha) ? sha : null;
+  }
   const comma = uri.indexOf(",");
   if (comma < 0) return null;
   try {
-    return Buffer.from(uri.slice(comma + 1), "base64");
+    return sha256Hex(Buffer.from(uri.slice(comma + 1), "base64"));
   } catch {
     return null;
   }
@@ -127,15 +136,15 @@ export function computeIntegrity(
   for (const a of arts) {
     const f = str(a.file);
     if (f === null) continue; // oversized / inline-only artifacts carry no bundle copy
-    const bytes = assetBytes(assets, f);
-    if (bytes === null) {
+    const actual = assetSha(assets, f);
+    if (actual === null) {
       missing.push(f);
       continue;
     }
     const source = isRecord(a.source) ? a.source : {};
     const sha = str(source.sha256);
     if (!sha) badSum.push(`${f} (no recorded sha256)`);
-    else if (sha256Hex(bytes) !== sha) badSum.push(f);
+    else if (actual !== sha) badSum.push(f);
   }
   checks.push({
     name: "checksums",

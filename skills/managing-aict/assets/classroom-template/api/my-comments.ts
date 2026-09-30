@@ -12,7 +12,7 @@
 import type { VercelRequest, VercelResponse } from "@vercel/node";
 import { SECURITY_HEADERS } from "../lib/gate.js";
 import { resolveToken } from "../lib/roster.js";
-import { listSubmissionsForStudent } from "../lib/submissions.js";
+import { listSubmissionMeta } from "../lib/submissions.js";
 import { listCommentsForShareHash, type StoredComment } from "../lib/comments.js";
 import { getRelease } from "../lib/release.js";
 
@@ -43,7 +43,7 @@ export async function run(
   const studentId = await resolveToken(blobToken, pepper, token);
   if (!studentId) return { status: 401, json: { error: "invalid_token" } };
 
-  const stored = await listSubmissionsForStudent(blobToken, studentId);
+  const stored = await listSubmissionMeta(blobToken, studentId);
   const shareHashes = Array.from(new Set(stored.map((s) => s.idempotencyKey)));
 
   const perSubmission = await Promise.all(

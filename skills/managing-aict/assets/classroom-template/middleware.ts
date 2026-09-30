@@ -109,7 +109,10 @@ function isBearerTokenRoute(pathname: string): boolean {
     pathname === "/api/submissions" ||
     pathname === "/api/comments" ||
     pathname === "/api/my-comments" ||
-    pathname === "/api/push-subscribe"
+    pathname === "/api/push-subscribe" ||
+    // POST is the student's bearer upload; GET is instructor-only and
+    // api/assets.ts checks the session cookie itself.
+    pathname === "/api/assets"
   );
 }
 
