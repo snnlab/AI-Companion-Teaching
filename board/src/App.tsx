@@ -641,7 +641,7 @@ export default function App({ data }: { data: BoardData }) {
 
 
   // Generate report (v0.10): same channel and lifecycle as requestReview —
-  // submit ends the board session; the session runs /aict:report
+  // submit ends the board session; the session runs /ait:report
   // and offers to reopen. Pending manual comments ride along.
   const requestReport = async (req: ReportRequest) => {
     const md = buildFeedbackMarkdown(annotations, null, req);
@@ -1083,7 +1083,7 @@ export default function App({ data }: { data: BoardData }) {
               Sent — your session is applying it
             </h1>
             <p className="mt-2 text-sm text-stone-600 dark:text-stone-400">
-              This action closes the board; run /aict:board to reopen
+              This action closes the board; run /ait:board to reopen
               it later.
             </p>
             <AutoCloseNotice state={autoClose.state} cancel={autoClose.cancel} enable={autoClose.enable} />
@@ -1097,7 +1097,7 @@ export default function App({ data }: { data: BoardData }) {
               {data.project.name}
             </div>
             <div className="text-[11px] text-stone-400 dark:text-stone-500">
-              aict · generated {data.generatedAt.slice(0, 16)}
+              AITCW · generated {data.generatedAt.slice(0, 16)}
               {data.git.available && data.git.head ? ` · ${data.git.head}` : ""}
             </div>
           </div>
@@ -1146,7 +1146,7 @@ export default function App({ data }: { data: BoardData }) {
                 </button>
               ) : (
                 <span className="text-[11px] text-stone-400 dark:text-stone-500">
-                  Run /aict:board --publish-web in Claude Code
+                  Run /ait:board --publish-web in Claude Code
                 </span>
               ))}
             {canAnnotate && (
@@ -1165,7 +1165,7 @@ export default function App({ data }: { data: BoardData }) {
             {data.git.available && data.git.head
               ? ` at commit ${data.git.head}`
               : ""}{" "}
-            — regenerate with /aict:board --export
+            — regenerate with /ait:board --export
           </div>
         )}
         {remote && (
@@ -1202,7 +1202,7 @@ export default function App({ data }: { data: BoardData }) {
         {canPost && postFailure === "server-gone" && (
           <div className="border-t border-amber-200 dark:border-amber-900 bg-amber-50 dark:bg-amber-950 px-5 py-1.5 text-center text-xs text-amber-800 dark:text-amber-300">
             The board server isn't running — your submission may already have
-            reached your session; otherwise reopen with /aict:board.
+            reached your session; otherwise reopen with /ait:board.
           </div>
         )}
       </header>

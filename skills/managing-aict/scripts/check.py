@@ -3,7 +3,7 @@
 
 Split out of submit.py (which used to check for comments as a side effect of
 every submission) so submission and comment-checking are two separate,
-independently runnable actions — /aict:submit sends, /aict:check
+independently runnable actions — /ait:submit sends, /ait:check
 looks for feedback, either any time.
 
 Fetches every comment across ALL of the student's own past submissions
@@ -17,7 +17,7 @@ own board.md step 5 routing then discusses/acts on it exactly like any other
 collaborator feedback).
 
 Anchored comments (a quote on a plan version, the tracker, or a results
-report) are ALSO written as a `--seed-annotations` file so /aict:check
+report) are ALSO written as a `--seed-annotations` file so /ait:check
 can reopen the local board with the instructor's comments painted in place,
 at their original anchors — the student reads the instructor's exact words
 in context, not a relayed summary. The text document above is still produced
@@ -67,7 +67,7 @@ def open_seed_board(root, seed_path, focus):
     feedback — anchored comments (seed_path set) paint in place; unanchored
     ones (e.g. a decision-log/timeline note) still bring the board up so the
     student sees it, just without an in-place painting. Detached:
-    /aict:check returns right away and the board runs on its own — it
+    /ait:check returns right away and the board runs on its own — it
     is a viewer here, the routing already happened via the board-feedback
     document(s) printed above. Set AICT_NO_BOARD=1 to skip (tests,
     headless runs)."""
@@ -98,13 +98,13 @@ def open_seed_board(root, seed_path, focus):
     try:
         subprocess.Popen(cmd, **kwargs)
         if seed_path:
-            print("[aict:check] opening the board with the "
+            print("[ait:check] opening the board with the "
                   "instructor's comments painted in place…")
         else:
-            print("[aict:check] opening the board…")
+            print("[ait:check] opening the board…")
     except OSError as e:
-        print("[aict:check] could not open the board (%s) — run "
-              "/aict:board to see the comments." % e, file=sys.stderr)
+        print("[ait:check] could not open the board (%s) — run "
+              "/ait:board to see the comments." % e, file=sys.stderr)
 
 
 def die(msg, code=1):
@@ -165,7 +165,7 @@ def annotation_to_seed(comment):
 def write_seed_file(root, seeds):
     """Write the seed array and return (path, focus) — focus is a component
     slug when every seed is a plan-scope comment on the same component (so
-    /aict:check can open the board with --focus), else None."""
+    /ait:check can open the board with --focus), else None."""
     path = root / "plans" / SEED_FILE_NAME
     path.write_text(json.dumps(seeds, indent=1), encoding="utf-8")
     comps = {s["component"] for s in seeds if s.get("scope") == "plan" and s.get("component")}
@@ -178,12 +178,12 @@ def write_seed_file(root, seeds):
 def main():
     root = find_root()
     if not (root / "plans" / "master-plan.md").is_file():
-        die("no plans/master-plan.md found — run /aict:init first")
+        die("no plans/master-plan.md found — run /ait:init first")
 
     cfg = classroom.read_classroom_config(root)
     if not cfg or not cfg.get("serverUrl") or not cfg.get("token"):
         die(
-            "no classroom server configured yet — run /aict:submit "
+            "no classroom server configured yet — run /ait:submit "
             "first, which saves the server URL and your personal token."
         )
 
@@ -225,18 +225,18 @@ def main():
             pass
         return
 
-    # Anchored comments -> a seed file the /aict:check command opens the
+    # Anchored comments -> a seed file the /ait:check command opens the
     # board with, so the student sees them in place. Written BEFORE the text
     # docs and the pulled-id mark, same crash-safety order as the inbox.
     seeds = [s for c in new if (s := annotation_to_seed(c)) is not None]
     seed_path = focus = None
     if seeds:
         seed_path, focus = write_seed_file(root, seeds)
-        print("[aict:check] board-seeds: %s" % seed_path.as_posix())
+        print("[ait:check] board-seeds: %s" % seed_path.as_posix())
         if focus:
-            print("[aict:check] focus: %s" % focus)
+            print("[ait:check] focus: %s" % focus)
         print(
-            "[aict:check] %d of %d new comment(s) are anchored and will "
+            "[ait:check] %d of %d new comment(s) are anchored and will "
             "paint on the board; open it to read them in context." % (len(seeds), len(new))
         )
     else:

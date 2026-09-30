@@ -8,7 +8,7 @@ Paper type: <quantitative | review>
 <!-- Initialized is the adoption cutoff: nothing before it is loggable, and nothing before it counts as a deviation — no plan governed that work. Never edit it — a renewal copies it forward unchanged. -->
 <!-- Detail level sets how much of each plan the board shows by default: compact = the contract (context, goal, decisions, boundaries); standard = + approach, steps, verification; full = + agent-detail code blocks. Every plan is authored in full; this only sets the default collapse, and any reader can toggle. Default: standard. -->
 <!-- Paper type is set once at init from the paper-type question and never changes on its own — it decides which CLAUDE.md conventions block (rules 7 and 9) is installed, and how the Components table's second column is labeled below. A renewal copies it forward unchanged, same as Initialized. -->
-Renewed: <YYYY-MM-DD — one line: the new direction and why; names the archived plan. Written only by /aict:renew; delete this line otherwise.>
+Renewed: <YYYY-MM-DD — one line: the new direction and why; names the archived plan. Written only by /ait:renew; delete this line otherwise.>
 
 ## Project context
 

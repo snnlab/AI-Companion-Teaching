@@ -50,11 +50,11 @@ LEGACY_CLAUDE_MARKERS = (
 )
 LEGACY = object()
 LEGACY_DENY_REASON = (
-    "This project carries the pre-AICT papertrail markers, so its integrity "
+    "This project carries the pre-rename papertrail markers, so its integrity "
     "gates (sign-off, results immutability, archived-plan immutability) are "
-    "NOT active on it. AICT ships no migration for pre-rename projects: "
-    "either start fresh with /aict:init in a new project, or replace the "
-    "papertrail markers with the aict ones by hand first "
+    "NOT active on it. AITCW ships no migration for pre-rename projects: "
+    "either start fresh with /ait:init in a new project, or replace the "
+    "papertrail markers with the current ones by hand first "
     "(<!-- aict:master-plan --> on line 1 of plans/master-plan.md, and the "
     "<!-- aict:start --> / <!-- aict:end --> pair in CLAUDE.md). Refusing "
     "rather than letting the write through ungated."
@@ -148,18 +148,18 @@ def check_ticket(ticket, slug, version, content):
     except (OSError, ValueError):
         return "deny", (
             "Approval ticket %s is unreadable or corrupt. Run "
-            "/aict:sign %s to replace it with a fresh ticket "
+            "/ait:sign %s to replace it with a fresh ticket "
             "(the draft must still exist at plans/execution/%s/"
             ".draft-v%d.md)." % (ticket.name, slug, slug, version))
     if doc.get("slug") != slug or doc.get("version") != version:
         return "deny", (
             "Sign ticket %s does not match %s v%d (slug/version mismatch). "
-            "Run /aict:sign %s to sign this plan again."
+            "Run /ait:sign %s to sign this plan again."
             % (ticket.name, slug, version, slug))
     exp = doc.get("expiry")
     if isinstance(exp, (int, float)) and time.time() > exp:
         return "deny", (
-            "Approval for %s v%d has expired. Run /aict:sign %s to "
+            "Approval for %s v%d has expired. Run /ait:sign %s to "
             "sign the current draft again." % (slug, version, slug))
     action_id = doc.get("orderActionId")
     if isinstance(action_id, str):
@@ -173,13 +173,13 @@ def check_ticket(ticket, slug, version, content):
             return "deny", (
                 "Approval ticket %s is not bound to the current pending board "
                 "order. Collect and acknowledge any existing order, then run "
-                "/aict:sign %s to sign v%d again."
+                "/ait:sign %s to sign v%d again."
                 % (ticket.name, slug, version))
     got = hashlib.sha256(normalize_plan(content).encode("utf-8")).hexdigest()
     if doc.get("contentHash") != got:
         return "deny", (
             "The draft for %s v%d changed since it was approved (content-hash "
-            "mismatch). Run /aict:sign %s to sign the current draft "
+            "mismatch). Run /ait:sign %s to sign the current draft "
             "again." % (slug, version, slug))
     return "allow", (
         "Sign-session approved: %s v%d approved by %s in session %s at %s "
@@ -273,7 +273,7 @@ def main():
     except Exception:
         if "/plans/execution/" in raw.replace("\\\\", "/").replace("\\", "/"):
             print(
-                "aict gate: unparseable hook payload, write not gated",
+                "AITCW gate: unparseable hook payload, write not gated",
                 file=sys.stderr,
             )
         sys.exit(0)
@@ -347,7 +347,7 @@ def main():
         if tool_name == "Edit" or p.exists():
             deny(
                 "Archived master plans are immutable — %s is the record of a "
-                "direction this project renewed away from. /aict:renew "
+                "direction this project renewed away from. /ait:renew "
                 "creates archives; nothing edits them." % p.name
             )
         sys.exit(0)
@@ -365,7 +365,7 @@ def main():
             deny(
                 "Sign-session approval tickets (%s*) are created only by "
                 "board.py --sign, never written directly. Run "
-                "/aict:sign; the ticket is written for you."
+                "/ait:sign; the ticket is written for you."
                 % TICKET_PREFIX
             )
         sys.exit(0)
@@ -382,7 +382,7 @@ def main():
 
     if _env("NO_GATE", "") == "1":
         print(
-            "aict: sign-off gate bypassed by AICT_NO_GATE for %s"
+            "AITCW: sign-off gate bypassed by AICT_NO_GATE for %s"
             % p.name,
             file=sys.stderr,
         )
@@ -426,7 +426,7 @@ def main():
             deny(
                 "Amendment versions record revisions of an existing plan — "
                 "v%d.md does not exist. A first or gap version needs a human "
-                "sign-off: run /aict:sign %s." % (version - 1, slug)
+                "sign-off: run /ait:sign %s." % (version - 1, slug)
             )
         allow(
             "Amendment recorded for %s v%d — ungated revision write. No "
@@ -537,14 +537,14 @@ def main():
             pass
         deny(
             "Sign-off gate timed out — no approval arrived within %ds.%s "
-            "Do NOT bypass the gate. Run /aict:sign %s to reopen a "
+            "Do NOT bypass the gate. Run /ait:sign %s to reopen a "
             "sign session for the saved draft; its durable ticket then admits "
             "the v%d.md write." % (timeout, saved, slug, version)
         )
     else:
         deny(
             "Sign-off gate could not open the sign session (%s). Run "
-            "/aict:sign %s, then attempt the write again."
+            "/ait:sign %s, then attempt the write again."
             % (err.splitlines()[-1] if err else "exit %d" % code, slug)
         )
 

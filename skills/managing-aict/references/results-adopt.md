@@ -1,6 +1,6 @@
 # Adopt, reconcile, and regenerate results
 
-Load this reference for `/aict:results --adopt`, reconcile mode, or any capture that needs to run a producing recipe. The mechanics script is `${CLAUDE_PLUGIN_ROOT}/skills/managing-aict/scripts/results.py`.
+Load this reference for `/ait:results --adopt`, reconcile mode, or any capture that needs to run a producing recipe. The mechanics script is `${CLAUDE_PLUGIN_ROOT}/skills/managing-aict/scripts/results.py`.
 
 ## Adopt existing results (`--adopt`)
 
@@ -21,7 +21,7 @@ Present the worklist and let the student choose whether to walk all, pick some, 
 - A prospective governing plan that predates the work gets `provenance: "planned"` and `late: true` because this is a backfill. Its canonical trailer may be signed or amendment.
 - A `Provenance: retrospective` plan, or no plan, gets `provenance: "retrofit"`. `planVersion` still cites the retrospective version when one exists.
 
-After `/aict:adopt`, every done component has a retrospective plan, so its backfilled bundles are retrofit, not planned. The plan links them through `planVersion` without claiming to have governed them. Report a component with no qualifying evidence as such and, if the student agrees, add a one-line tracker note. The only zero-artifact bundle that can be finalized is a retrospective report whose figures cannot be reproduced, and only after explicit confirmation under [Summary-only bundles](#summary-only-bundles).
+After `/ait:adopt`, every done component has a retrospective plan, so its backfilled bundles are retrofit, not planned. The plan links them through `planVersion` without claiming to have governed them. Report a component with no qualifying evidence as such and, if the student agrees, add a one-line tracker note. The only zero-artifact bundle that can be finalized is a retrospective report whose figures cannot be reproduced, and only after explicit confirmation under [Summary-only bundles](#summary-only-bundles).
 
 Finish by opening one board session for view-only review over everything captured. Never capture all components silently in bulk. In a manual capture the per-component interview is the verification; in the execution loop the verification is the mechanical validation pass plus the student's Reopen right over an agent-curated, `curatedBy`-labeled bundle. Silent bulk writes are how plan theater starts — both modes stay visible and evidence-based.
 

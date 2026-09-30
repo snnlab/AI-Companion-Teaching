@@ -5,7 +5,7 @@ Builds a submission envelope (the same payload the board serves in "remote"/
 "hosted" mode, plus a bounded git-log excerpt of plans/) and, on request,
 POSTs it to a classroom server's /api/submissions endpoint with the
 student's personal bearer token. Never runs silently — always preview with
---dry-run first (the /aict:submit command enforces this).
+--dry-run first (the /ait:submit command enforces this).
 
 Stdlib only, Python 3.9+. Modes:
   --dry-run                    build the envelope, print a summary, no network call
@@ -311,7 +311,7 @@ def _handle_response(code, data):
     if code == 201 and data.get("status") == "created":
         print("Submitted — new submission %s recorded." % data.get("submissionId", "?"))
         print_reverify(data.get("reverify", []))
-        print("Run /aict:check to see any instructor feedback.")
+        print("Run /ait:check to see any instructor feedback.")
         sys.exit(0)
     if code == 200 and data.get("status") == "replay":
         print(
@@ -319,7 +319,7 @@ def _handle_response(code, data):
             "(submission %s)." % data.get("submissionId", "?")
         )
         print_reverify(data.get("reverify", []))
-        print("Run /aict:check to see any instructor feedback.")
+        print("Run /ait:check to see any instructor feedback.")
         sys.exit(0)
     die(
         "Classroom server returned an unexpected %s response: %s"
@@ -349,7 +349,7 @@ def _handle_error_response(code, data):
 # --- CLI ---
 
 def parse_args(argv=None):
-    ap = argparse.ArgumentParser(description="aict submit")
+    ap = argparse.ArgumentParser(description="AITCW submit")
     ap.add_argument("--dry-run", action="store_true",
                      help="build the envelope and print a summary; no network call")
     ap.add_argument("--url", default=None, help="classroom server base URL")
@@ -362,7 +362,7 @@ def main():
     args = parse_args()
     root = find_root()
     if not (root / "plans" / "master-plan.md").is_file():
-        die("no plans/master-plan.md found — run /aict:init first")
+        die("no plans/master-plan.md found — run /ait:init first")
 
     cfg = classroom.read_classroom_config(root)
 
@@ -387,7 +387,7 @@ def main():
         die(
             "no classroom server configured — the first submission needs "
             "--url and --token (given to you by your instructor, out of "
-            "band). Run /aict:submit, which walks you through this "
+            "band). Run /ait:submit, which walks you through this "
             "once and saves it locally."
         )
 

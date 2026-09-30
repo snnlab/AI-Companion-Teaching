@@ -21,7 +21,7 @@ class TestInitPortabilityDocs(unittest.TestCase):
 
         self.assertIn("AskUserQuestion is unavailable", command)
         self.assertIn("create nothing", command)
-        self.assertIn("/aict:init Paper type:", command)
+        self.assertIn("/ait:init Paper type:", command)
         for field in ("Paper:", "RQs:", "source=", "rough size=", "sensitivity=",
                       "Course:", "model profile=", "reader detail="):
             self.assertIn(field, command)
@@ -56,7 +56,7 @@ class TestSignTransactionDocs(unittest.TestCase):
     def test_plan_leaves_a_scored_pending_draft(self):
         command = (REPO / "commands" / "plan.md").read_text(encoding="utf-8")
 
-        self.assertIn("draft ready — it signs at /aict:execute", command)
+        self.assertIn("draft ready — it signs at /ait:execute", command)
         self.assertIn("link it to the draft path", command)
         self.assertNotIn("--gate-batch", command)
         self.assertNotIn("clicks **Approve**", command)

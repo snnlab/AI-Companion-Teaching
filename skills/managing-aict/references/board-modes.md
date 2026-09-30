@@ -1,6 +1,6 @@
 # Board export, share, and ingest modes
 
-Loaded by `/aict:board` step 3 when `$ARGUMENTS` carries `--export`, `--share`,
+Loaded by `/ait:board` step 3 when `$ARGUMENTS` carries `--export`, `--share`,
 or `--collect <file>`. Each mode replaces the live serve entirely.
 
 ## Export mode

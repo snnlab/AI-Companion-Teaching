@@ -1,5 +1,5 @@
 # tests/test_check.py
-"""Tests for check.py (/aict:check — fetches + routes instructor
+"""Tests for check.py (/ait:check — fetches + routes instructor
 comments across ALL of the student's own submissions via GET
 /api/my-comments). Mirrors tests/test_board.py's TestPull, which check.py's
 routing pipeline is deliberately modeled on. Run:
@@ -97,7 +97,7 @@ class TestCheck(unittest.TestCase):
             with contextlib.redirect_stderr(err), self.assertRaises(SystemExit) as cm:
                 check.main()
             self.assertEqual(cm.exception.code, 1)
-            self.assertIn("/aict:submit", err.getvalue())
+            self.assertIn("/ait:submit", err.getvalue())
 
     def test_fetch_sends_bearer_token_to_my_comments_endpoint(self):
         with self._project() as root:
@@ -155,8 +155,8 @@ class TestCheck(unittest.TestCase):
             with contextlib.redirect_stdout(out):
                 check.main()
             text = out.getvalue()
-            self.assertIn("[aict:check] board-seeds:", text)
-            self.assertIn("[aict:check] focus: 02-clpm-fit", text)
+            self.assertIn("[ait:check] board-seeds:", text)
+            self.assertIn("[ait:check] focus: 02-clpm-fit", text)
             seed_path = root / "plans" / check.SEED_FILE_NAME
             self.assertTrue(seed_path.is_file())
             import json as _json

@@ -178,6 +178,41 @@ def extract_payload(html: str) -> dict:
     return json.loads(m.group(1))
 
 
+class TestPluginDataCarryOver(unittest.TestCase):
+    """aict -> ait plugin rename: Claude Code hands out a new
+    CLAUDE_PLUGIN_DATA; roster URL/token state must follow, not vanish."""
+
+    def _with_data(self, path, fn):
+        old = os.environ.get("CLAUDE_PLUGIN_DATA")
+        os.environ["CLAUDE_PLUGIN_DATA"] = str(path)
+        try:
+            return fn()
+        finally:
+            if old is None:
+                os.environ.pop("CLAUDE_PLUGIN_DATA", None)
+            else:
+                os.environ["CLAUDE_PLUGIN_DATA"] = old
+
+    def test_moves_aict_era_sibling_once(self):
+        with tempfile.TemporaryDirectory() as d:
+            data = Path(d)
+            (data / "aict-aict" / "classroom").mkdir(parents=True)
+            (data / "aict-aict" / "classroom" / "cfg.json").write_text("{}", encoding="utf-8")
+            got = self._with_data(data / "ait-ait", lambda: board.plugin_data_dir("classroom"))
+            self.assertEqual(got, data / "ait-ait" / "classroom")
+            self.assertTrue((got / "cfg.json").is_file())
+            self.assertFalse((data / "aict-aict" / "classroom").exists())
+
+    def test_existing_new_dir_wins(self):
+        with tempfile.TemporaryDirectory() as d:
+            data = Path(d)
+            (data / "aict-aict" / "web").mkdir(parents=True)
+            (data / "ait-ait" / "web").mkdir(parents=True)
+            got = self._with_data(data / "ait-ait", lambda: board.plugin_data_dir("web"))
+            self.assertEqual(got, data / "ait-ait" / "web")
+            self.assertTrue((data / "aict-aict" / "web").is_dir())
+
+
 class TestWebConfig(unittest.TestCase):
     def test_hash_is_stable_per_root(self):
         with tempfile.TemporaryDirectory() as d:

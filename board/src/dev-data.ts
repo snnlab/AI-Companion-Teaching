@@ -911,7 +911,7 @@ export const devData: BoardData = {
     baselineHash: "dev0000000000000000000000000000000000000000000000000000000000dev",
     raw: "",
     proseBefore:
-      "How each aict stage picks a Claude model. **nudge**: Claude tells you the profile's model and suggests `/model`; you decide. **agent**: the delegated stage runs on the profile's model automatically.",
+      "How each AITCW stage picks a Claude model. **nudge**: Claude tells you the profile's model and suggests `/model`; you decide. **agent**: the delegated stage runs on the profile's model automatically.",
     proseAfter:
       "Planning gets the strongest model at max effort; execution a fast cheap one; review and validation a smarter prior at low effort.",
     rows: [

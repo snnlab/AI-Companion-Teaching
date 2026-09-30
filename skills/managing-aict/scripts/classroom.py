@@ -58,7 +58,7 @@ def _legacy_seen_comments_path(root):
     # submission and remembered them here as {shareHash: [id, ...]}. That
     # code was split out into check.py + this module; migrate its state once
     # so a student who already used the old flow does not re-see old
-    # comments on their first /aict:check.
+    # comments on their first /ait:check.
     return _classroom_data_dir() / ("%s-seen-comments.json" % web_project_hash(root))
 
 

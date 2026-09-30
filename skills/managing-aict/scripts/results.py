@@ -429,7 +429,7 @@ def cmd_changed(root, args):
 
 
 def main():
-    ap = argparse.ArgumentParser(description="aict results mechanics")
+    ap = argparse.ArgumentParser(description="AITCW results mechanics")
     sub = ap.add_subparsers(dest="cmd", required=True)
     d = sub.add_parser("discover")
     d.add_argument("--dir", action="append", default=None,

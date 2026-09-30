@@ -1,6 +1,6 @@
 ---
 name: aict-results-validator
-description: Independent plan-vs-execution validation for a staged aict results bundle. Dispatched by /aict:results with the governing plan version, staging dir, decision log, and git evidence; returns the strict validation JSON.
+description: Independent plan-vs-execution validation for a staged AITCW results bundle. Dispatched by /ait:results with the governing plan version, staging dir, decision log, and git evidence; returns the strict validation JSON.
 model: {{MODEL}}
 effort: {{EFFORT}}
 tools: Read, Grep, Glob

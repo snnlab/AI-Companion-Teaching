@@ -1,6 +1,6 @@
 # Decision Log
 
-Append-only. Entries are timestamped and written **as decisions happen**. Never backfill at the end of a session; never rewrite an existing entry. The log's value is that it records what actually happened, when it happened. Late-captured entries are allowed only through `/aict:sync` and must carry the `(late-captured at sync)` label.
+Append-only. Entries are timestamped and written **as decisions happen**. Never backfill at the end of a session; never rewrite an existing entry. The log's value is that it records what actually happened, when it happened. Late-captured entries are allowed only through `/ait:sync` and must carry the `(late-captured at sync)` label.
 
 Append an entry when:
 

@@ -1,6 +1,6 @@
 # Planning doctrine — how an execution plan gets authored
 
-Referenced by `/aict:plan` (steps 3–5). The rubric (`plan-rubric.md`) grades the artifact; this file governs the authoring, so a plan authored here works as well standalone as one authored inside a heavyweight personal setup.
+Referenced by `/ait:plan` (steps 3–5). The rubric (`plan-rubric.md`) grades the artifact; this file governs the authoring, so a plan authored here works as well standalone as one authored inside a heavyweight personal setup.
 
 ## Research first — plan from the repo's reality, not from memory of it
 
@@ -20,7 +20,7 @@ Plan the minimum that answers the research question — no analyses, robustness 
 
 ## The revision loop
 
-Authoring produces a scored pending draft. The student can annotate it on the board, then revise it through as many passes as needed. `/aict:execute` signs the draft before work begins. `/aict:sign` signs it sooner when requested. A canonical plan changes only through a new version with a `Supersedes` line. `/sync` records a confirmed amendment, and re-execution recommits that amendment through a sign session.
+Authoring produces a scored pending draft. The student can annotate it on the board, then revise it through as many passes as needed. `/ait:execute` signs the draft before work begins. `/ait:sign` signs it sooner when requested. A canonical plan changes only through a new version with a `Supersedes` line. `/sync` records a confirmed amendment, and re-execution recommits that amendment through a sign session.
 
 ## Compatibility with other skills
 

@@ -63,7 +63,7 @@ class TestLegacyMarkersDenyLoudly(unittest.TestCase):
 
     def assert_migration_denial(self, decision, reason):
         self.assertEqual(decision, "deny")
-        self.assertIn("/aict:init", reason)
+        self.assertIn("/ait:init", reason)
         self.assertIn("papertrail", reason)
 
     def test_finalized_bundle_edit_denied_with_migration_notice(self):
@@ -99,7 +99,7 @@ class TestCurrentAndAbsentMarkersUnchanged(unittest.TestCase):
         decision, reason = run_gate(root, "Edit", target)
         self.assertEqual(decision, "deny")
         self.assertIn("immutable", reason)
-        self.assertNotIn("/aict:init", reason)
+        self.assertNotIn("/ait:init", reason)
 
     def test_no_markers_passes_through(self):
         root = make_repo("# not an AICT project", None)

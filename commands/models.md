@@ -3,9 +3,9 @@ description: View or edit the per-stage model profile and regenerate the project
 allowed-tools: Read, Write, Edit, Glob, Grep, AskUserQuestion, Bash(python3:*), Bash(git:*), Bash(ls:*), Bash(date:*)
 ---
 
-Manage `plans/model-profile.md` — which Claude model each aict stage runs on. Script: `${CLAUDE_PLUGIN_ROOT}/skills/managing-aict/scripts/models.py` (python3, stdlib only). Requires an initialized project (`plans/master-plan.md` with its marker); if absent, say so and stop.
+Manage `plans/model-profile.md` — which Claude model each AITCW stage runs on. Script: `${CLAUDE_PLUGIN_ROOT}/skills/managing-aict/scripts/models.py` (python3, stdlib only). Requires an initialized project (`plans/master-plan.md` with its marker); if absent, say so and stop.
 
-The board also exposes this as a **Models** tab (`/aict:board`): it shows the profile in every mode and, when served live from the project, edits model/effort inline and regenerates the agents on Save — the same operations as this command, for when the student is already on the board. This command remains the way to change a stage's mechanism, repair a non-canonical profile, or work headless.
+The board also exposes this as a **Models** tab (`/ait:board`): it shows the profile in every mode and, when served live from the project, edits model/effort inline and regenerates the agents on Save — the same operations as this command, for when the student is already on the board. This command remains the way to change a stage's mechanism, repair a non-canonical profile, or work headless.
 
 1. **Read or create the profile.** If `plans/model-profile.md` is missing, offer to create it from `${CLAUDE_PLUGIN_ROOT}/skills/managing-aict/templates/model-profile.md` (copy verbatim — the defaults are the recommended profile). Present the current table plus the two mechanisms, one line each: **nudge** — Claude tells you the profile's model for this stage and suggests `/model`; you decide. **agent** — this delegated stage runs on the profile's model automatically, best-effort: an org model allowlist, `CLAUDE_CODE_SUBAGENT_MODEL`, or a per-invocation override can supersede the request. `inherit` = whatever your session is using.
 

@@ -1,4 +1,4 @@
-/* AICT classroom — push service worker.
+/* AITCW classroom — push service worker.
  * Scope "/" (served from the site root). Its only job is to turn a push
  * message from POST /api/release into a system notification and, on click,
  * open (or focus) the student's /me page. No caching, no offline behaviour. */

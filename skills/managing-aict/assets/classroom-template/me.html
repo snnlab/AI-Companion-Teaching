@@ -129,7 +129,7 @@
     app.appendChild(el("p", { class: "muted", text:
       "교수자가 남긴 피드백을 확인하는 페이지입니다. 아무것도 설치할 필요 없이, 제출에 쓰는 토큰만 있으면 됩니다." }));
     var form = el("form");
-    form.appendChild(el("label", { for: "tok", text: "제출 토큰 (교수자에게 받은, /aict:submit 에 쓰는 그 토큰)" }));
+    form.appendChild(el("label", { for: "tok", text: "제출 토큰 (교수자에게 받은, /ait:submit 에 쓰는 그 토큰)" }));
     var input = el("input", { type: "text", id: "tok", autocomplete: "off",
       autocapitalize: "off", spellcheck: "false", placeholder: "예: 3f9a…" });
     form.appendChild(input);
@@ -330,7 +330,7 @@
 
     var hint = el("div", { class: "card" }, [
       el("p", { class: "muted", text:
-        "이 피드백을 Claude 세션으로 가져오려면 프로젝트 디렉터리에서 /aict:check 를 실행하세요. 코멘트가 계획·타임라인 위에 그대로 표시됩니다." }),
+        "이 피드백을 Claude 세션으로 가져오려면 프로젝트 디렉터리에서 /ait:check 를 실행하세요. 코멘트가 계획·타임라인 위에 그대로 표시됩니다." }),
     ]);
     app.appendChild(hint);
     app.appendChild(controls());

@@ -1,6 +1,6 @@
 # Web publishing and hosted-board modes
 
-Load this reference only for `/aict:board` web modes. The board script is `${CLAUDE_PLUGIN_ROOT}/skills/managing-aict/scripts/board.py`.
+Load this reference only for `/ait:board` web modes. The board script is `${CLAUDE_PLUGIN_ROOT}/skills/managing-aict/scripts/board.py`.
 
 ## Deprecated GitHub Pages publishing (`--publish`)
 

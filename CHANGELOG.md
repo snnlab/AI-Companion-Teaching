@@ -1,5 +1,30 @@
 # Changelog
 
+## [0.9.0] - 2026-09-30
+
+Renamed from AICT to **AITCW (AI Teaching Companion Workspace)**. The plugin
+itself is renamed (`aict` -> `ait`), so this is a reinstall, not an update.
+
+### Changed
+- **Renamed AITCW (/ait: commands). Reinstall: /plugin marketplace remove aict**
+- **then /plugin marketplace add snnlab/AI-Companion-Teaching**
+- **then /plugin install ait@ait and /reload-plugins**
+- Every slash command moves from `/aict:<cmd>` to `/ait:<cmd>`; the plugin
+  and marketplace are both named `ait` (`ait@ait`). Visible names — board
+  header and tab title, roster footer, update notice, gate messages, docs,
+  command/agent descriptions, the `/me` page's instructions — say AITCW.
+- **Internal identifiers deliberately unchanged**: the `<!-- aict:* -->`
+  markers (so the sign-off gate and its fail-open LEGACY guard behave
+  exactly as before on every existing project), `AICT_*` env vars,
+  `~/.aict`, the `aict-*` review agents and `aict-model`/`aict-report`
+  provenance markers, `.aict-approved-*` tickets, `./aict-board`, and all
+  localStorage / CSS keys. Existing student projects need no migration.
+- **Saved roster/board config carries over.** A renamed plugin gets a new
+  `CLAUDE_PLUGIN_DATA` directory; `plugin_data_dir` moves the aict-era
+  sibling (`aict-*/<ns>`) across once, so the roster URL, personal token,
+  and pulled-comment state are not lost. The update check also recognises
+  a marketplace added under the repo's new name (`snnlab/AI-Companion-Teaching`).
+
 ## [0.8.1] - 2026-09-30
 
 ### Added

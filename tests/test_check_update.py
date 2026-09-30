@@ -162,17 +162,21 @@ class TestMarketplaceResolution(unittest.TestCase):
         known = {"marketplaces": {"campus-mkt": {"source": {"repo": "snnlab/papertrail_v0"}}}}
         self.assertEqual(cu.resolve_marketplace_name(known), "campus-mkt")
 
+    def test_moved_repo_name_also_matches(self):
+        known = {"m": {"source": {"repo": "snnlab/AI-Companion-Teaching"}}}
+        self.assertEqual(cu.resolve_marketplace_name(known), "m")
+
     def test_fallback_when_absent(self):
-        self.assertEqual(cu.resolve_marketplace_name({}), "aict")
+        self.assertEqual(cu.resolve_marketplace_name({}), "ait")
 
 
 class TestNoticeAndOutput(unittest.TestCase):
     def test_notice_has_versions_highlights_and_command(self):
         notice = cu.format_notice("0.11.0", "0.12.0",
-                                  ["Update reminders.", "Version pinning."], "aict")
+                                  ["Update reminders.", "Version pinning."], "ait")
         self.assertIn("v0.12.0 available (you have v0.11.0)", notice)
         self.assertIn("Update reminders.", notice)
-        self.assertIn("/plugin update aict@aict", notice)
+        self.assertIn("/plugin update ait@ait", notice)
         self.assertIn("/reload-plugins", notice)
 
     def test_notice_without_highlights_still_valid(self):

@@ -179,7 +179,7 @@ class TestTimeoutPersistsDraft(unittest.TestCase):
             self.assertTrue(draft.exists())
             self.assertEqual(draft.read_text(encoding="utf-8"), DRAFT)
             self.assertIn(".draft-v1.md", reason)
-            self.assertIn("/aict:sign", reason)
+            self.assertIn("/ait:sign", reason)
             self.assertNotIn("NO_GATE", reason)
 
     def test_timeout_overwrites_stale_draft(self):
@@ -203,7 +203,7 @@ class TestTicketErrorMessages(unittest.TestCase):
             decision, reason = run_gate_reason(root, comp / "v1.md", SIGNED)
             self.assertEqual(decision, "deny")
             self.assertIn("unreadable or corrupt", reason)
-            self.assertIn("/aict:sign", reason)
+            self.assertIn("/ait:sign", reason)
             self.assertNotIn("--gate-batch", reason)
 
     def test_expired_ticket_names_sign_command(self):
@@ -214,7 +214,7 @@ class TestTicketErrorMessages(unittest.TestCase):
             decision, reason = run_gate_reason(root, comp / "v1.md", SIGNED)
             self.assertEqual(decision, "deny")
             self.assertIn("expired", reason)
-            self.assertIn("/aict:sign", reason)
+            self.assertIn("/ait:sign", reason)
             self.assertNotIn("--gate-batch", reason)
 
     def test_hash_mismatch_names_sign_command(self):
@@ -226,7 +226,7 @@ class TestTicketErrorMessages(unittest.TestCase):
             decision, reason = run_gate_reason(root, comp / "v1.md", tampered)
             self.assertEqual(decision, "deny")
             self.assertIn("content-hash mismatch", reason)
-            self.assertIn("/aict:sign", reason)
+            self.assertIn("/ait:sign", reason)
             self.assertNotIn("--gate-batch", reason)
 
     def test_order_bound_orphan_fast_denies_in_actual_hook(self):

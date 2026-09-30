@@ -3,7 +3,7 @@
 // use for this route (the instructor already gets a per-student view via
 // GET /api/submissions/:studentId + GET /api/comments?shareHash=).
 //
-// Exists because /aict:check (unlike the old submit.py-embedded
+// Exists because /ait:check (unlike the old submit.py-embedded
 // comment check it replaces) must not depend on the student's local
 // bookkeeping to know which shareHashes they've ever submitted — a second
 // machine or a fresh install would silently lose that memory and miss
@@ -54,7 +54,7 @@ export async function run(
 
   // Per-submission "released" state — the /me page uses releasedAt both to
   // decide what to show at all (nothing until the instructor clicks "학생에게
-  // 피드백 보내기") and to compute its "new feedback" badge. /aict:check
+  // 피드백 보내기") and to compute its "new feedback" badge. /ait:check
   // ignores this list and still pulls every comment; releasing only gates the
   // passive web notification, never the explicit student-initiated pull.
   const releases = await Promise.all(shareHashes.map((sh) => getRelease(blobToken, sh)));

@@ -57,7 +57,7 @@ MARKER_RE = re.compile(
 )
 MISMATCH_HINT = (
     "review agents are out of date with the installed plugin or profile — "
-    "run /aict:models and regenerate"
+    "run /ait:models and regenerate"
 )
 PROFILE_REL = Path("plans") / "model-profile.md"
 
@@ -484,7 +484,7 @@ def cmd_check(root):
 
 
 def main(argv=None):
-    ap = argparse.ArgumentParser(description="aict model profile tools")
+    ap = argparse.ArgumentParser(description="AITCW model profile tools")
     ap.add_argument("--root", default=None, help="project root (default: walk up to plans/master-plan.md)")
     sub = ap.add_subparsers(dest="cmd", required=True)
     p_stage = sub.add_parser("stage", help="print one stage's profile row as JSON")

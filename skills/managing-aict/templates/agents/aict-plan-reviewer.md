@@ -1,6 +1,6 @@
 ---
 name: aict-plan-reviewer
-description: Single-pass execution-plan review — scores five channels 0–3 and returns the scorecard JSON. Dispatched by /aict:review with the plan path, rubric path, and evidence paths.
+description: Single-pass execution-plan review — scores five channels 0–3 and returns the scorecard JSON. Dispatched by /ait:review with the plan path, rubric path, and evidence paths.
 model: {{MODEL}}
 effort: {{EFFORT}}
 tools: Read, Grep, Glob, Bash

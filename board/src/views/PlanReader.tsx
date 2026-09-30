@@ -329,7 +329,7 @@ export default function PlanReader({
     return (
       <div className="rounded-lg border border-dashed border-stone-300 dark:border-stone-600 bg-white dark:bg-stone-900 p-10 text-center text-sm text-stone-500">
         No analysis plans yet. Scope the first component with{" "}
-        <code>/aict:plan</code>.
+        <code>/ait:plan</code>.
       </div>
     );
   }

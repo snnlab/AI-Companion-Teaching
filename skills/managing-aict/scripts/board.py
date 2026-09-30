@@ -121,17 +121,30 @@ def plugin_data_dir(namespace):
     board URL and pull key. Silently starting from an empty directory would
     read to the user as "the tool forgot my server", so move a legacy
     directory across once, and keep reading it in place if the move fails.
+
+    The AITCW rename renamed the plugin itself (aict -> ait), so Claude Code
+    hands out a fresh CLAUDE_PLUGIN_DATA (<data>/ait-<marketplace>); the same
+    state from the aict-era sibling (<data>/aict-*) is carried over likewise.
     """
     base = os.environ.get("CLAUDE_PLUGIN_DATA")
     d = Path(base) / namespace if base else Path.home() / ".aict" / namespace
     if not d.exists():
-        legacy = Path.home() / ".papertrail" / namespace
-        if legacy.is_dir():
+        legacies = []
+        if base:
+            parent = Path(base).parent
             try:
-                d.parent.mkdir(parents=True, exist_ok=True)
-                legacy.rename(d)
+                legacies += sorted(parent.glob("aict-*/" + namespace))
             except OSError:
-                return legacy
+                pass
+        legacies.append(Path.home() / ".papertrail" / namespace)
+        for legacy in legacies:
+            if legacy.is_dir() and legacy != d:
+                try:
+                    d.parent.mkdir(parents=True, exist_ok=True)
+                    legacy.rename(d)
+                except OSError:
+                    return legacy
+                break
     return d
 
 
@@ -922,7 +935,7 @@ def detail_level(master_content):
 def collect_payload(root, mode, focus):
     plans = root / "plans"
     if not (plans / "master-plan.md").is_file():
-        die("no plans/master-plan.md under %s — run /aict:init first" % root)
+        die("no plans/master-plan.md under %s — run /ait:init first" % root)
 
     exec_groups = []
     exec_dir = plans / "execution"
@@ -1100,7 +1113,7 @@ def inject(template, payload):
 def template_path():
     p = Path(__file__).resolve().parent.parent / "assets" / "board-template.html"
     if not p.is_file():
-        die("board template missing at %s — reinstall the aict plugin" % p)
+        die("board template missing at %s — reinstall the AITCW plugin" % p)
     return p
 
 
@@ -2167,7 +2180,7 @@ def render_roster_html():
     replacement = '<div id="root" data-aict-mode="roster"></div>'
     if html.count(marker) != 1:
         die("board template's root div not found in the expected form — "
-            "reinstall the aict plugin")
+            "reinstall the AITCW plugin")
     return html.replace(marker, replacement, 1)
 
 
@@ -2252,7 +2265,7 @@ def publish_web(root, args):
     cfg = read_web_config(root)
     if cfg is None:
         die("No web board configured yet. First-run setup is interactive (it needs "
-            "`vercel login` in your own terminal). Run /aict:board --publish-web "
+            "`vercel login` in your own terminal). Run /ait:board --publish-web "
             "in Claude Code, which walks you through signup, login, and the first deploy.")
     out = materialize_web_dir(root)
     rc, deploy_out = _vercel(["deploy", "--prod", "--yes"], cwd=str(out))
@@ -2263,7 +2276,7 @@ def publish_web(root, args):
     print("Published to %s" % url)
     print("  password: the one you set (share it in a separate message)")
     if unpulled:
-        print("  %d new comment%s waiting — run /aict:board --pull"
+        print("  %d new comment%s waiting — run /ait:board --pull"
               % (unpulled, "" if unpulled == 1 else "s"))
 
 
@@ -2280,17 +2293,17 @@ def pull(root, args):
             p.unlink()
     cfg = read_web_config(root)
     if cfg is None:
-        die("No web board configured. Run /aict:board --publish-web first.")
+        die("No web board configured. Run /ait:board --publish-web first.")
     if not cfg.get("url"):
         die("The local config has no board URL (BOARD_URL was missing from the project "
-            "env when --web-connect ran). Run /aict:board --publish-web once — "
+            "env when --web-connect ran). Run /ait:board --publish-web once — "
             "it records the URL — then retry.")
     url = cfg["url"].rstrip("/") + "/api/comments"
     try:
         data = _http_get_json(url, {"x-board-key": cfg["pullKey"]})
     except urllib.error.HTTPError as e:
         if e.code == 401:
-            die("Pull key rejected (rotated or reset). Run /aict:board --web-connect.")
+            die("Pull key rejected (rotated or reset). Run /ait:board --web-connect.")
         die("Web board returned %s. It may be misconfigured; try --publish-web again." % e.code)
     except (urllib.error.URLError, OSError):
         die("Web board unreachable (the project may be deleted). Run --publish-web to recreate, "
@@ -2397,7 +2410,7 @@ def web_clear(root, args):
         die("This deletes ALL collaborator comments on the hosted board. Re-run with --force.")
     if not cfg.get("url"):
         die("The local config has no board URL (BOARD_URL was missing from the project "
-            "env when --web-connect ran). Run /aict:board --publish-web once — "
+            "env when --web-connect ran). Run /ait:board --publish-web once — "
             "it records the URL — then retry.")
     url = cfg["url"].rstrip("/") + "/api/clear"
     try:
@@ -2417,7 +2430,7 @@ def set_password(root, args):
         die("No web board configured. Run --publish-web first.")
     print("Rotate the passphrase from the conversational flow: it generates a new "
           "passphrase and BOARD_SESSION_SECRET, sets them with `vercel env add` "
-          "(reading from stdin), and redeploys. See /aict:board.")
+          "(reading from stdin), and redeploys. See /ait:board.")
 
 
 def export(root, args):
@@ -2480,7 +2493,7 @@ GITHUB_RE = re.compile(
 _VOLATILE_RE = re.compile(r'"generatedAt":\s*"[^"]*"')
 INDEX_REDIRECT = (
     '<!doctype html>\n<meta charset="utf-8">\n'
-    "<title>aict</title>\n"
+    "<title>AITCW</title>\n"
     '<meta http-equiv="refresh" content="0; url=board.html">\n'
     '<a href="board.html">Open the board</a>\n'
 )
@@ -2606,7 +2619,7 @@ def publish_pages(root, args):
     html = render_static_html(root, None)  # v1 publishes the full board (no --focus)
     outcome = publish_to_branch(
         root, {"board.html": html, "index.html": INDEX_REDIRECT},
-        "gh-pages", "Publish aict",
+        "gh-pages", "Publish AITCW",
     )
     url = "https://%s.github.io/%s/" % (owner, repo)
     enabled = _pages_enabled(owner, repo)
@@ -3222,7 +3235,7 @@ def load_seed_annotations(path):
 
 
 def parse_args(argv=None):
-    ap = argparse.ArgumentParser(description="aict")
+    ap = argparse.ArgumentParser(description="AITCW board")
     ap.add_argument("--focus", default=None, metavar="NN-slug")
     ap.add_argument("--export", nargs="?", const="DEFAULT", default=None, metavar="PATH")
     ap.add_argument("--share", nargs="?", const="DEFAULT", default=None, metavar="PATH")
@@ -3303,7 +3316,7 @@ def main():
             if (Path.cwd() / "plans" / "master-plan.md").is_file():
                 root = Path.cwd()
             else:
-                die("no plans/master-plan.md found — run /aict:init first")
+                die("no plans/master-plan.md found — run /ait:init first")
 
     if args.collect is not None:
         if args.collect == "PENDING":

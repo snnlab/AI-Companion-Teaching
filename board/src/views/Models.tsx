@@ -297,7 +297,7 @@ export default function Models({
       {!modelProfile.editable && (
         <Notice
           text={
-            "This profile isn't in the canonical six-row form, so it's read-only here — edit it with /aict:models." +
+            "This profile isn't in the canonical six-row form, so it's read-only here — edit it with /ait:models." +
             (modelProfile.warnings.length ? " (" + modelProfile.warnings.join("; ") + ")" : "")
           }
         />
@@ -401,7 +401,7 @@ function Header() {
     <div className="mb-4">
       <h1 className="text-lg font-semibold text-stone-800 dark:text-stone-200">Model profile</h1>
       <p className="text-xs text-stone-500 dark:text-stone-400">
-        Which Claude model each aict stage runs on.
+        Which Claude model each AITCW stage runs on.
       </p>
     </div>
   );
@@ -499,7 +499,7 @@ function Banner({ feedback }: { feedback: Feedback }) {
       )}
       {feedback.genError && (
         <div className="rounded-md border border-red-200 dark:border-red-900 bg-red-50 dark:bg-red-950 px-3 py-2 text-xs text-red-800 dark:text-red-200">
-          Profile saved, but agent regeneration didn't finish ({feedback.genError}) — Save again or run /aict:models.
+          Profile saved, but agent regeneration didn't finish ({feedback.genError}) — Save again or run /ait:models.
         </div>
       )}
     </div>
@@ -509,7 +509,7 @@ function Banner({ feedback }: { feedback: Feedback }) {
 function errorMessage(status: number, json: { error?: string }): string {
   const e = json?.error ?? "";
   if (e === "unparsable-base")
-    return "The on-disk profile isn't in the canonical form — edit it with /aict:models.";
+    return "The on-disk profile isn't in the canonical form — edit it with /ait:models.";
   if (e === "invalid") return "That model or effort value isn't allowed.";
   if (e === "bad-token") return "Session token rejected — reload the board.";
   if (status === 500) return "The server couldn't rewrite the profile safely; nothing was changed.";

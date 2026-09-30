@@ -98,7 +98,7 @@ export default function RosterApp() {
               {state.data.course.name ?? state.data.course.id}
             </div>
             <div className="text-[11px] text-stone-400 dark:text-stone-500">
-              aict roster · generated {state.data.generatedAt.slice(0, 16)}
+              AITCW roster · generated {state.data.generatedAt.slice(0, 16)}
             </div>
           </div>
           <div className="flex items-center gap-2">
