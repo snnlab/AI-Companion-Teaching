@@ -99,7 +99,7 @@ describe("GET /api/roster", () => {
     expect(rows.map((x) => x.displayName)).toEqual(["Alice", "Bob"]);
     expect(rows[0]).toMatchObject({ studentId: "alice", submissionCount: 3, lastSubmission: { idempotencyKey: "key1" } });
     expect(list).not.toHaveBeenCalled();
-    expect(get.mock.calls.map((c) => c[0])).toEqual(["roster-meta/summary.json", "roster-meta/last-viewed.json"]);
+    expect(get.mock.calls.map((c) => c[0])).toEqual(["roster-meta/summary.json"]);
   });
 
   it("registering a student adds them to an existing summary with a conditional write", async () => {
@@ -112,7 +112,7 @@ describe("GET /api/roster", () => {
     await run("POST", authedHeaders(), { studentId: "carol", displayName: "Carol" }, ENV, NOW);
     const w = put.mock.calls.find((c) => c[0] === "roster-meta/summary.json");
     expect(w![2]).toMatchObject({ ifMatch: "e1" });
-    expect(JSON.parse(w![1] as string).students.carol).toEqual({ displayName: "Carol", lastSubmission: null, submissionCount: 0 });
+    expect(JSON.parse(w![1] as string).students.carol).toEqual({ displayName: "Carol", lastSubmission: null, submissionCount: 0, viewedAt: null });
   });
 
   it("counts a pre-index student's submissions once and writes the index back", async () => {
@@ -152,90 +152,53 @@ describe("GET /api/roster", () => {
     expect(JSON.parse(indexWrite![1] as string).map((m: { idempotencyKey: string }) => m.idempotencyKey)).toEqual(["key2", "key1"]);
   });
 
-  it("flags a row isNewSinceLastView when its submission postdates the instructor's last visit, and clears on the next visit", async () => {
-    // Anchored to the real wall clock (not the fictional NOW second-count
-    // used elsewhere) because setLastViewed/getLastViewed compare real
-    // `new Date().toISOString()` values, not the `now` epoch-seconds param.
-    const submittedAt = new Date(Date.now() - 3600_000).toISOString(); // 1 hour ago
-    list.mockImplementation(async (opts: { prefix: string }) => {
-      if (opts.prefix === "roster/") return { blobs: [{ pathname: "roster/alice.json" }], hasMore: false };
-      if (opts.prefix === "submissions/alice/") return { blobs: [{ pathname: "submissions/alice/key1.json" }], hasMore: false };
-      return { blobs: [], hasMore: false };
-    });
+  it("marks a row new when its latest submission is later than the last time that student's board was opened", async () => {
+    list.mockResolvedValue({ blobs: [], hasMore: false });
+    const sub = (at: string) => ({ submittedAt: at, idempotencyKey: "k" });
     get.mockImplementation(async (pathname: string) => {
-      if (pathname === "roster/alice.json") {
-        return { statusCode: 200, stream: streamOf({ studentId: "alice", displayName: "Alice", tokenHash: "h", createdAt: "x" }) };
-      }
-      if (pathname === "roster-meta/last-viewed.json") return null; // never viewed yet
-      if (pathname === "submissions/alice/_latest.json") {
-        return { statusCode: 200, stream: streamOf({ idempotencyKey: "key1", submittedAt }) };
-      }
-      if (pathname === "submissions/alice/key1.json") {
-        return { statusCode: 200, stream: streamOf({ studentId: "alice", submittedAt, idempotencyKey: "key1", reverify: [], payload: { files: { executionPlans: [] } } }) };
-      }
-      return null;
-    });
-
-    const first = await run("GET", authedHeaders(), undefined, ENV, NOW);
-    const firstRow = (first.json as { students: Record<string, unknown>[] }).students[0];
-    expect(firstRow.isNewSinceLastView).toBe(true);
-
-    // The last-viewed pointer must have been advanced to "now" for next time.
-    const pointerWrite = put.mock.calls.find((c) => c[0] === "roster-meta/last-viewed.json");
-    expect(pointerWrite).toBeTruthy();
-    const writtenTimestamp = (JSON.parse(pointerWrite![1] as string) as { timestamp: string }).timestamp;
-
-    // A second visit, with the pointer now set to after the submission, sees it as no longer new.
-    get.mockImplementation(async (pathname: string) => {
-      if (pathname === "roster/alice.json") {
-        return { statusCode: 200, stream: streamOf({ studentId: "alice", displayName: "Alice", tokenHash: "h", createdAt: "x" }) };
-      }
-      if (pathname === "roster-meta/last-viewed.json") return { statusCode: 200, stream: streamOf({ timestamp: writtenTimestamp }) };
-      if (pathname === "submissions/alice/_latest.json") {
-        return { statusCode: 200, stream: streamOf({ idempotencyKey: "key1", submittedAt }) };
-      }
-      if (pathname === "submissions/alice/key1.json") {
-        return { statusCode: 200, stream: streamOf({ studentId: "alice", submittedAt, idempotencyKey: "key1", reverify: [], payload: { files: { executionPlans: [] } } }) };
-      }
-      return null;
-    });
-    const second = await run("GET", authedHeaders(), undefined, ENV, NOW + 10);
-    const secondRow = (second.json as { students: Record<string, unknown>[] }).students[0];
-    expect(secondRow.isNewSinceLastView).toBe(false);
-  });
-
-  it("compares submittedAt and lastViewed as instants, not raw strings — a non-UTC offset must not misorder them", async () => {
-    // submit.py's submittedAt carries the STUDENT's local UTC offset (e.g.
-    // datetime.now().astimezone().isoformat()), never normalized to 'Z'.
-    // "2026-08-25T01:00:00+09:00" is 2026-08-24T16:00:00Z — chronologically
-    // BEFORE "2026-08-24T17:00:00.000Z" — even though it sorts AFTER it as a
-    // bare string (the date digit '5' > '4'). A correct implementation must
-    // read this submission as NOT new; a lexical-string-comparison bug reads
-    // it as new. This regression-tests exactly the shape submit.py produces.
-    const submittedAtLocalOffset = "2026-08-25T01:00:00+09:00"; // == 2026-08-24T16:00:00.000Z
-    const lastViewedUtc = "2026-08-24T17:00:00.000Z"; // later in real time
-    list.mockImplementation(async (opts: { prefix: string }) => {
-      if (opts.prefix === "roster/") return { blobs: [{ pathname: "roster/alice.json" }], hasMore: false };
-      if (opts.prefix === "submissions/alice/") return { blobs: [{ pathname: "submissions/alice/key1.json" }], hasMore: false };
-      return { blobs: [], hasMore: false };
-    });
-    get.mockImplementation(async (pathname: string) => {
-      if (pathname === "roster/alice.json") {
-        return { statusCode: 200, stream: streamOf({ studentId: "alice", displayName: "Alice", tokenHash: "h", createdAt: "x" }) };
-      }
-      if (pathname === "roster-meta/last-viewed.json") return { statusCode: 200, stream: streamOf({ timestamp: lastViewedUtc }) };
-      if (pathname === "submissions/alice/_latest.json") {
-        return { statusCode: 200, stream: streamOf({ idempotencyKey: "key1", submittedAt: submittedAtLocalOffset }) };
-      }
-      if (pathname === "submissions/alice/key1.json") {
-        return { statusCode: 200, stream: streamOf({ studentId: "alice", submittedAt: submittedAtLocalOffset, idempotencyKey: "key1", reverify: [], payload: { files: { executionPlans: [] } } }) };
-      }
-      return null;
+      if (pathname !== "roster-meta/summary.json") return null;
+      return {
+        statusCode: 200,
+        blob: { etag: "e" },
+        stream: streamOf({
+          version: 1,
+          students: {
+            // opened before the latest submission -> new
+            alice: { displayName: "Alice", lastSubmission: sub("2026-08-20T10:00:00.000Z"), submissionCount: 2, viewedAt: "2026-08-19T00:00:00.000Z" },
+            // opened after it -> not new
+            bob: { displayName: "Bob", lastSubmission: sub("2026-08-20T10:00:00.000Z"), submissionCount: 1, viewedAt: "2026-08-21T00:00:00.000Z" },
+            // never opened -> new
+            carol: { displayName: "Carol", lastSubmission: sub("2026-08-20T10:00:00.000Z"), submissionCount: 1 },
+            // never submitted -> never new
+            dan: { displayName: "Dan", lastSubmission: null, submissionCount: 0 },
+            // +09:00 offset: 2026-08-25T01:00+09:00 == 2026-08-24T16:00Z, BEFORE the 17:00Z open
+            erin: { displayName: "Erin", lastSubmission: sub("2026-08-25T01:00:00+09:00"), submissionCount: 1, viewedAt: "2026-08-24T17:00:00.000Z" },
+          },
+        }),
+      };
     });
     const r = await run("GET", authedHeaders(), undefined, ENV, NOW);
-    const row = (r.json as { students: Record<string, unknown>[] }).students[0];
-    expect(row.lastSubmission).not.toBeNull();
-    expect(row.isNewSinceLastView).toBe(false);
+    const byId = Object.fromEntries(
+      (r.json as { students: Record<string, unknown>[] }).students.map((x) => [x.studentId, x.isNewSinceLastView]),
+    );
+    expect(byId).toEqual({ alice: true, bob: false, carol: true, dan: false, erin: false });
+    // Loading the dashboard no longer writes anything.
+    expect(put).not.toHaveBeenCalled();
+  });
+
+  it("seeds each student's opened time from the legacy dashboard-visit pointer when rebuilding", async () => {
+    list.mockImplementation(async (opts: { prefix: string }) =>
+      opts.prefix === "roster/" ? { blobs: [{ pathname: "roster/alice.json" }], hasMore: false } : { blobs: [], hasMore: false });
+    get.mockImplementation(async (pathname: string) => {
+      if (pathname === "roster/alice.json") {
+        return { statusCode: 200, stream: streamOf({ studentId: "alice", displayName: "Alice", tokenHash: "h", createdAt: "x" }) };
+      }
+      if (pathname === "roster-meta/last-viewed.json") return { statusCode: 200, stream: streamOf({ timestamp: "2026-08-01T00:00:00.000Z" }) };
+      return null;
+    });
+    await run("GET", authedHeaders(), undefined, ENV, NOW);
+    const w = put.mock.calls.find((c) => c[0] === "roster-meta/summary.json");
+    expect(JSON.parse(w![1] as string).students.alice.viewedAt).toBe("2026-08-01T00:00:00.000Z");
   });
 });
 

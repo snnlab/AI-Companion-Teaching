@@ -103,11 +103,11 @@ type SendState =
   | { phase: "sent"; releasedAt: string; push: PushSummary }
   | { phase: "error"; message: string };
 
-/** "학생에게 피드백 보내기" — the only instructor action that reaches the
+/** "Send feedback to student" — the only instructor action that reaches the
  * student's /me page. Posts to /api/release for the CURRENT submission's
  * shareHash. Until it is pressed, the student sees nothing; pressing it again
  * after adding more comments just refreshes the release timestamp (and
- * re-lights the student's "새 피드백" badge). */
+ * re-lights the student's "new feedback" badge). */
 function SendFeedbackButton({
   shareHash,
   by,
@@ -157,7 +157,7 @@ function SendFeedbackButton({
         push: j.push && typeof j.push.sent === "number" ? j.push : null,
       });
     } catch {
-      setState({ phase: "error", message: "서버에 연결하지 못했습니다." });
+      setState({ phase: "error", message: "Couldn't reach the server." });
     }
   };
 
@@ -175,27 +175,27 @@ function SendFeedbackButton({
         onClick={send}
       >
         {state.phase === "sending"
-          ? "보내는 중…"
+          ? "Sending…"
           : already
-            ? "피드백 다시 보내기"
-            : "학생에게 피드백 보내기"}
+            ? "Send feedback again"
+            : "Send feedback to student"}
       </button>
       {state.phase === "error" && (
         <p className="mt-1 text-[11px] text-rose-600 dark:text-rose-400">
-          보내지 못했습니다 — {state.message}
+          Couldn't send — {state.message}
         </p>
       )}
       {already && state.phase !== "error" && (
         <p className="mt-1 text-[11px] text-emerald-700 dark:text-emerald-400">
-          {state.phase === "sent" ? "보냈습니다" : "이미 보냄"} · {fmtDate(already)}
+          {state.phase === "sent" ? "Sent" : "Already sent"} · {fmtDate(already)}
           {state.phase === "sent" && state.push && state.push.sent > 0 && (
-            <> · 알림 {state.push.sent}건 전송</>
+            <> · {state.push.sent} notification{state.push.sent === 1 ? "" : "s"} delivered</>
           )}
         </p>
       )}
       {!already && state.phase === "idle" && (
         <p className="mt-1 text-[11px] text-stone-400 dark:text-stone-500">
-          누르기 전까지 학생에게는 아무것도 표시되지 않습니다.
+          The student sees nothing until you press this.
         </p>
       )}
     </div>
@@ -204,7 +204,7 @@ function SendFeedbackButton({
 
 /** The drilled-in view: renders the EXISTING, unmodified App.tsx with one
  * submission's payload. The floating panel carries "back to roster", a
- * submission switcher, and the "학생에게 피드백 보내기" button. */
+ * submission switcher, and the "Send feedback to student" button. */
 function StudentBoard({
   studentId,
   submissions,
@@ -338,6 +338,9 @@ export default function Roster({ data }: { data: RosterData }) {
   const [sortKey, setSortKey] = useState<SortKey>("name");
   const [sortDir, setSortDir] = useState<SortDir>("asc");
   const [query, setQuery] = useState("");
+  // Students opened during this visit: their "new" badge clears right away
+  // (the server records the open too, so it stays cleared after a reload).
+  const [opened, setOpened] = useState<Set<string>>(() => new Set());
   const [selected, setSelected] = useState<{ studentId: string; displayName: string } | null>(
     null,
   );
@@ -364,6 +367,7 @@ export default function Roster({ data }: { data: RosterData }) {
 
   const openStudent = async (studentId: string, displayName: string) => {
     setSelected({ studentId, displayName });
+    setOpened((s) => (s.has(studentId) ? s : new Set(s).add(studentId)));
     setStudentState({ status: "loading" });
     try {
       const res = await fetch(`/api/submissions/${encodeURIComponent(studentId)}`, {
@@ -509,7 +513,7 @@ export default function Roster({ data }: { data: RosterData }) {
                             <span className="text-stone-600 dark:text-stone-400">
                               {fmtDate(sub.submittedAt)}
                             </span>
-                            {row.isNewSinceLastView && (
+                            {row.isNewSinceLastView && !opened.has(row.studentId) && (
                               <span
                                 className="rounded-full border border-sky-300 bg-sky-50 px-1.5 py-0.5 text-[10px] font-semibold uppercase tracking-wide text-sky-700 dark:border-sky-800 dark:bg-sky-950 dark:text-sky-300"
                                 title="Submitted since your last visit to this dashboard"

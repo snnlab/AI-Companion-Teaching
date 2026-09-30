@@ -23,6 +23,10 @@ export interface SummaryRow {
   displayName: string;
   lastSubmission: { submittedAt: string; idempotencyKey: string } | null;
   submissionCount: number;
+  // When the instructor last opened this student's board (drill-in). A row
+  // is "new" when its latest submission is later than this. Absent/null =
+  // never opened.
+  viewedAt?: string | null;
 }
 
 export interface RosterSummary {

@@ -45,10 +45,11 @@ export interface RosterRow {
   // null = registered but never submitted yet.
   lastSubmission: RosterSubmissionSummary | null;
   submissionCount: number;
-  // True when lastSubmission postdates the instructor's previous roster
-  // visit (server-computed from a single last-viewed pointer — see
-  // classroom-template's lib/roster.ts). Optional so older cached payloads
-  // without this field still parse; absence renders as "not new".
+  // True when lastSubmission postdates the last time the instructor opened
+  // THIS student's board (server-computed from the roster summary's
+  // per-student viewedAt — see classroom-template's lib/rosterSummary.ts).
+  // Optional so older payloads without this field still parse; absence
+  // renders as "not new".
   isNewSinceLastView?: boolean;
 }
 

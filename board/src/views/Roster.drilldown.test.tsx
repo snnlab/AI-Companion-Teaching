@@ -133,11 +133,11 @@ describe("Roster drill-in", () => {
     fireEvent.click(screen.getByText("Amara"));
     await waitFor(() => screen.getByText("Amara's Paper"));
 
-    const sendBtn = await screen.findByRole("button", { name: "학생에게 피드백 보내기" });
+    const sendBtn = await screen.findByRole("button", { name: "Send feedback to student" });
     fireEvent.click(sendBtn);
 
     await waitFor(() => {
-      expect(screen.getByText(/보냈습니다/)).toBeTruthy();
+      expect(screen.getByText(/^Sent/)).toBeTruthy();
     });
     const post = calls.find((c) => c.url === "/api/release" && c.init?.method === "POST");
     expect(post).toBeTruthy();
@@ -155,9 +155,9 @@ describe("Roster drill-in", () => {
     fireEvent.click(screen.getByText("Amara"));
     await waitFor(() => screen.getByText("Amara's Paper"));
     await waitFor(() => {
-      expect(screen.getByRole("button", { name: "피드백 다시 보내기" })).toBeTruthy();
+      expect(screen.getByRole("button", { name: "Send feedback again" })).toBeTruthy();
     });
-    expect(screen.getByText(/이미 보냄/)).toBeTruthy();
+    expect(screen.getByText(/Already sent/)).toBeTruthy();
   });
 
   it("returns to the roster table via the back affordance", async () => {

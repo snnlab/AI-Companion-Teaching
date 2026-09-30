@@ -1,5 +1,5 @@
 // @vitest-environment jsdom
-import { afterEach, describe, expect, it } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
 import { cleanup, fireEvent, render, screen, within } from "@testing-library/react";
 import Roster from "./Roster";
 import type { RosterData } from "../lib/rosterTypes";
@@ -64,6 +64,17 @@ describe("Roster table", () => {
     const brodyRow = screen.getByText("Brody").closest("tr")!;
     expect(within(amaraRow).getByText("new")).toBeTruthy();
     expect(within(brodyRow).queryByText("new")).toBeNull();
+  });
+
+  it("clears a student's \"new\" badge once their board has been opened", async () => {
+    const fetchMock = vi.fn(async () => new Response(JSON.stringify({ studentId: "s-amara", displayName: "Amara", submissions: [] })));
+    vi.stubGlobal("fetch", fetchMock);
+    render(<Roster data={data()} />);
+    fireEvent.click(screen.getByText("Amara"));
+    fireEvent.click(await screen.findByRole("button", { name: /Back to roster/ }));
+    const amaraRow = screen.getByText("Amara").closest("tr")!;
+    expect(within(amaraRow).queryByText("new")).toBeNull();
+    vi.unstubAllGlobals();
   });
 
   it("keeps the mechanical verification signals off this screen", () => {

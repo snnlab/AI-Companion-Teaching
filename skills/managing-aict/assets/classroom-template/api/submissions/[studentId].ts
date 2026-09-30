@@ -1,6 +1,8 @@
 // GET /api/submissions/:studentId            — the list of one student's
 //                                               submissions (newest first),
-//                                               metadata only.
+//                                               metadata only. Also records
+//                                               that the instructor opened
+//                                               this student (clears "new").
 // GET /api/submissions/:studentId?key=<key>  — ONE submission in full.
 //
 // Instructor-only (gated by the instructor_session cookie, both at the
@@ -18,6 +20,7 @@ import { getStudent } from "../../lib/roster.js";
 import { getSubmission, listSubmissionMeta } from "../../lib/submissions.js";
 import { IDEMPOTENCY_KEY_RE } from "../../lib/validate.js";
 import { str } from "../../lib/reverify.js";
+import { updateSummary } from "../../lib/rosterSummary.js";
 
 export interface RunResult { status: number; json: unknown }
 
@@ -49,6 +52,14 @@ export async function run(
   }
 
   const submissions = await listSubmissionMeta(blobToken, studentId); // newest-first
+  // Opening a student's board is what clears their "new" badge.
+  const viewedAt = new Date().toISOString();
+  await updateSummary(blobToken, (s) => {
+    const row = s.students[studentId];
+    if (!row) return false;
+    row.viewedAt = viewedAt;
+    return true;
+  });
   return {
     status: 200,
     json: { studentId, displayName: entry.displayName, submissions },

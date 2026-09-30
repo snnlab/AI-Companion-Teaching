@@ -13,7 +13,7 @@ const { put, get, list, del } = vi.hoisted(() => ({
 }));
 vi.mock("@vercel/blob", () => ({ put, get, list, del }));
 
-import { hashToken, mintToken, upsertStudent, rotateToken, getStudent, resolveToken, listRoster, getLastViewed, setLastViewed } from "./roster";
+import { hashToken, mintToken, upsertStudent, rotateToken, getStudent, resolveToken, listRoster } from "./roster";
 
 const TOKEN = "tok-blob";
 const PEPPER = "pepper-123";
@@ -137,20 +137,3 @@ describe("listRoster / getStudent", () => {
   });
 });
 
-describe("getLastViewed / setLastViewed", () => {
-  it("returns null when the instructor has never viewed the roster", async () => {
-    get.mockResolvedValue(null);
-    expect(await getLastViewed(TOKEN)).toBeNull();
-  });
-
-  it("writes an overwritable pointer and reads it back", async () => {
-    await setLastViewed(TOKEN, "2026-08-25T01:00:00.000Z");
-    expect(put).toHaveBeenCalledWith(
-      "roster-meta/last-viewed.json",
-      JSON.stringify({ timestamp: "2026-08-25T01:00:00.000Z" }),
-      expect.objectContaining({ allowOverwrite: true }),
-    );
-    get.mockResolvedValue({ statusCode: 200, stream: streamOf({ timestamp: "2026-08-25T01:00:00.000Z" }) });
-    expect(await getLastViewed(TOKEN)).toBe("2026-08-25T01:00:00.000Z");
-  });
-});

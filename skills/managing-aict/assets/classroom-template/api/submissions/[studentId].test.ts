@@ -10,7 +10,7 @@ const { put, get, list } = vi.hoisted(() => ({
   get: vi.fn(),
   list: vi.fn(),
 }));
-vi.mock("@vercel/blob", () => ({ put, get, list }));
+vi.mock("@vercel/blob", () => ({ put, get, list, del: vi.fn(async () => ({})) }));
 
 import { run } from "./[studentId]";
 import { signCookie } from "../../lib/auth";
@@ -65,6 +65,25 @@ describe("GET /api/submissions/:studentId", () => {
     expect(body.submissions.map((s) => s.idempotencyKey)).toEqual(["bbbbbbbbbbbbbbbb", "aaaaaaaaaaaaaaaa"]);
     expect(body.submissions.every((s) => !("payload" in s))).toBe(true);
     expect(list).not.toHaveBeenCalled();
+  });
+
+  it("opening a student's list records it as viewed in the roster summary", async () => {
+    get.mockImplementation(async (pathname: string) => {
+      if (pathname === "roster/alice.json") return { statusCode: 200, stream: streamOf(ALICE) };
+      if (pathname === "submissions/alice/_index.json") return { statusCode: 200, stream: streamOf([]) };
+      if (pathname === "roster-meta/summary.json") {
+        return {
+          statusCode: 200,
+          blob: { etag: "e1" },
+          stream: streamOf({ version: 1, students: { alice: { displayName: "Alice", lastSubmission: null, submissionCount: 0 } } }),
+        };
+      }
+      return null;
+    });
+    await run("GET", authedHeaders(), "alice", null, ENV, NOW);
+    const w = put.mock.calls.find((c) => c[0] === "roster-meta/summary.json");
+    expect(w![2]).toMatchObject({ ifMatch: "e1" });
+    expect(typeof JSON.parse(w![1] as string).students.alice.viewedAt).toBe("string");
   });
 
   it("returns one submission in full for ?key=", async () => {

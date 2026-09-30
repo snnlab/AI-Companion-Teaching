@@ -1,5 +1,22 @@
 # Changelog
 
+## [0.11.0] - 2026-09-30
+
+### Changed
+- **The roster's "new" badge is per student.** It now means "submitted since
+  you last opened this student's board" (was: since you last opened the
+  dashboard, so merely loading the page cleared every badge, reviewed or
+  not). Opening a student's board records a per-student `viewedAt` in the
+  roster summary and clears the badge at once; a new submission brings it
+  back. Loading the dashboard no longer writes anything. On upgrade, the old
+  single dashboard-visit pointer seeds every student's `viewedAt`, so badges
+  carry over rather than all lighting up.
+- **The board UI is English throughout.** The drill-in feedback panel
+  ("Send feedback to student", "Sending…", "Sent", "Already sent",
+  "Send feedback again", "N notifications delivered") and the post-save
+  banner in a roster drill-in were Korean in an otherwise English board.
+  The student `/me` page is unchanged.
+
 ## [0.10.0] - 2026-09-30
 
 Scales the classroom roster server: the dashboard and the drill-in no longer

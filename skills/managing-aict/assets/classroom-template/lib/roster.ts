@@ -130,23 +130,15 @@ export async function rotateToken(
   return { token, entry };
 }
 
-// "New since I last opened the dashboard." There is only one instructor
-// login this round (the shared BOARD_PASSWORD), so a single pointer is
-// enough — no per-instructor state to key it by. GET /api/roster reads the
-// PREVIOUS value to compute each row's isNewSinceLastView (see api/roster.ts),
-// then overwrites it with `now` — the same "read-before-overwrite" shape as
-// board.py's own hosted-comment pull-clears-on-read behavior, just for
-// submissions instead of comments.
+// Legacy: before 0.11 the "new" badge meant "since the instructor last opened
+// the dashboard", kept in this single pointer. It is no longer written — the
+// badge is now per student (lib/rosterSummary.ts's viewedAt). It is read once
+// when the roster summary is (re)built, to seed viewedAt.
 export async function getLastViewed(blobToken: string): Promise<string | null> {
   const doc = await readJsonBlob<{ timestamp: string }>(blobToken, LAST_VIEWED_PATH);
   return doc?.timestamp ?? null;
 }
 
-export async function setLastViewed(blobToken: string, timestamp: string): Promise<void> {
-  await put(LAST_VIEWED_PATH, JSON.stringify({ timestamp }), {
-    access: "private", allowOverwrite: true, contentType: "application/json", token: blobToken,
-  });
-}
 
 // Resolves a plaintext bearer token to a studentId via the reverse index —
 // one Blob get() keyed by sha256(pepper+token), never a full roster scan.
