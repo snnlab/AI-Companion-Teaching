@@ -52,6 +52,7 @@ First setup takes about 20 minutes, mostly installing Node and logging into Verc
 
 Hosting itself is free on Vercel's "Hobby" plan for personal, noncommercial use — the same plan the single-project board uses. Two things worth checking:
 
+- The Hobby plan allows 12 functions per deployment. The server uses nine, so it fits; if a deploy is ever refused with `exceeded_serverless_functions_per_deployment`, the deploy directory holds files left over from an older plugin version — refresh it as `/ait:host --deploy` describes.
 - If your course or institution has any commercial arrangement attached, confirm whether the free plan's noncommercial terms actually apply, or whether you need a paid plan.
 - **Check with your institution or IRB before your first deploy, not after.** This server aggregates decision logs and git history from every registered student in one place — see **Data and privacy** below before you send a single token.
 

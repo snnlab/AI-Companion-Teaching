@@ -1,3 +1,11 @@
+// GET    /api/push-subscribe — the VAPID *public* key, for the /me page's
+//        pushManager.subscribe() call. Public by definition (it is the
+//        "application server key" browsers embed in the subscription), so
+//        no auth. { key: null } when web push is not configured, so the
+//        page can hide its "Notify me" button. Also reachable as
+//        /api/vapid-public-key (a vercel.json rewrite; it used to be a
+//        function of its own, folded in here to stay under the Hobby
+//        plan's 12-function limit).
 // POST   /api/push-subscribe — register a browser push subscription for the
 //        calling student. Bearer token only (their own token, same as
 //        /api/my-comments). Body is the JSON a PushManager.subscribe()
@@ -30,6 +38,7 @@ export async function run(
   body: unknown,
   env: Record<string, string | undefined>,
 ): Promise<RunResult> {
+  if (method === "GET") return { status: 200, json: { key: env.VAPID_PUBLIC_KEY ?? null } };
   if (method !== "POST" && method !== "DELETE") {
     return { status: 405, json: { error: "method not allowed" } };
   }

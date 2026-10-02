@@ -33,10 +33,13 @@ export function gateDecision(
   // reasoning as the two exemptions above.
   if (pathname === "/api/my-comments") return { action: "allow" };
   // GET /api/my-submission — bearer-only, the student's own released
-  // submission for the history board; api/my-submission.ts checks the token.
+  // submission for the history board. Served by api/my-comments.ts (a
+  // vercel.json rewrite), which checks the token. The gate sees the original
+  // path, so the exemption stays under this name.
   if (pathname === "/api/my-submission") return { action: "allow" };
   // POST/DELETE /api/push-subscribe — bearer-only (the student's own token),
-  // same reasoning as /api/my-comments.
+  // same reasoning as /api/my-comments. Its GET returns only the VAPID
+  // public key (also served as /api/vapid-public-key).
   if (pathname === "/api/push-subscribe") return { action: "allow" };
   // /api/assets — POST is the student's bearer upload of a submission's
   // files; GET is instructor-only and api/assets.ts checks the session

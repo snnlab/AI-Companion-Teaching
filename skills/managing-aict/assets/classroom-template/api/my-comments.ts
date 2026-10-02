@@ -9,12 +9,17 @@
 // machine or a fresh install would silently lose that memory and miss
 // comments left on an older submission. This route asks the server instead,
 // which already knows the student's full submission history.
+//
+// GET /api/my-submission?key=<shareHash> is served here too (vercel.json
+// rewrites it to this function with ?submission=1) — see lib/mySubmission.ts.
 import type { VercelRequest, VercelResponse } from "@vercel/node";
 import { SECURITY_HEADERS } from "../lib/gate.js";
 import { resolveToken } from "../lib/roster.js";
 import { listSubmissionMeta } from "../lib/submissions.js";
 import { listCommentsForShareHash, type StoredComment } from "../lib/comments.js";
 import { getRelease } from "../lib/release.js";
+import { run as runMySubmission } from "../lib/mySubmission.js";
+import { str } from "../lib/reverify.js";
 
 export interface RunResult { status: number; json: unknown }
 
@@ -72,7 +77,11 @@ export async function run(
 }
 
 export default async function handler(req: VercelRequest, res: VercelResponse): Promise<void> {
-  const r = await run(req.method ?? "GET", req.headers as HeaderBag, process.env);
+  const query = (req.query ?? {}) as Record<string, unknown>;
+  const wantsSubmission = query.submission !== undefined || query.key !== undefined;
+  const r = wantsSubmission
+    ? await runMySubmission(req.method ?? "GET", req.headers as HeaderBag, str(query.key), process.env)
+    : await run(req.method ?? "GET", req.headers as HeaderBag, process.env);
   for (const [k, v] of Object.entries(SECURITY_HEADERS)) res.setHeader(k, v);
   res.status(r.status).json(r.json);
 }

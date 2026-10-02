@@ -7,6 +7,18 @@
   },
   "rewrites": [
     {
+      "source": "/api/logout",
+      "destination": "/api/login?logout=1"
+    },
+    {
+      "source": "/api/vapid-public-key",
+      "destination": "/api/push-subscribe"
+    },
+    {
+      "source": "/api/my-submission",
+      "destination": "/api/my-comments?submission=1"
+    },
+    {
       "source": "/me",
       "destination": "/me.html"
     },

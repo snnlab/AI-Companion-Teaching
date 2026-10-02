@@ -80,6 +80,15 @@ describe("DELETE /api/push-subscribe", () => {
 });
 
 it("rejects other methods", async () => {
-  const r = await run("GET", authed(), null, ENV);
+  const r = await run("PUT", authed(), null, ENV);
   expect(r.status).toBe(405);
+});
+
+describe("GET (the VAPID public key, also served as /api/vapid-public-key)", () => {
+  it("returns the configured public key without a token", async () => {
+    expect(await run("GET", {}, null, { ...ENV, VAPID_PUBLIC_KEY: "BPUBLIC" })).toEqual({ status: 200, json: { key: "BPUBLIC" } });
+  });
+  it("returns key: null when web push is not configured", async () => {
+    expect(await run("GET", {}, null, ENV)).toEqual({ status: 200, json: { key: null } });
+  });
 });

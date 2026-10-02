@@ -1,5 +1,25 @@
 # Changelog
 
+## [0.13.1] - 2026-10-02
+
+### Fixed
+- **The classroom server deploys on Vercel's Hobby plan again.** 0.13.0 added
+  a twelfth API function and the Hobby plan's limit of 12 functions per
+  deployment was exceeded (`exceeded_serverless_functions_per_deployment`;
+  the previous deployment kept serving, so nothing went down). Three routes
+  are now served by an existing function through a `vercel.json` rewrite —
+  `/api/logout` by `login`, `/api/vapid-public-key` by `push-subscribe`,
+  `/api/my-submission` by `my-comments` — leaving nine. The URLs are
+  unchanged, so `/me`, the history board and `/ait:check` need no update.
+  A test now fails if the template grows past ten API functions.
+- **Refreshing the deploy directory removes files the template no longer
+  has.** `/ait:host --deploy` copied the new `api/` and `lib/` over the old
+  ones, so a dropped function stayed deployed. It now replaces both
+  directories. **Instructors who already refreshed to 0.13.0:** refresh again
+  with the updated `--deploy` steps (or delete `api/logout.ts`,
+  `api/vapid-public-key.ts` and `api/my-submission.ts` from
+  `plans-admin/.classroom-web/` after copying), then deploy.
+
 ## [0.13.0] - 2026-10-02
 
 Instructor feedback on the review workflow, plus a way back to past

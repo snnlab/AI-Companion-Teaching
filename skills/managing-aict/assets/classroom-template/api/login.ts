@@ -1,5 +1,5 @@
 import type { VercelRequest, VercelResponse } from "@vercel/node";
-import { signCookie, cookieHeader, timingSafeEqualStr } from "../lib/auth.js";
+import { signCookie, cookieHeader, clearCookieHeader, timingSafeEqualStr } from "../lib/auth.js";
 import { SECURITY_HEADERS } from "../lib/gate.js";
 import { loginPageHtml } from "../lib/loginPage.js";
 
@@ -16,7 +16,21 @@ export function run(body: unknown, env: Record<string, string | undefined>, now:
   return { status: 401, html: loginPageHtml(true) };
 }
 
+// /api/logout is served here too (vercel.json rewrites it to /api/login
+// ?logout=1): one function fewer, to stay under the Hobby plan's 12-function
+// limit. Either signal counts — the rewritten query or the original path.
+export function isLogout(url: string | undefined, query: Record<string, unknown>): boolean {
+  return query.logout !== undefined || (url ?? "").split("?")[0].endsWith("/logout");
+}
+
 export default async function handler(req: VercelRequest, res: VercelResponse): Promise<void> {
+  if (isLogout(req.url, (req.query ?? {}) as Record<string, unknown>)) {
+    // Intentionally method-agnostic: no client code calls this endpoint.
+    for (const [k, v] of Object.entries(SECURITY_HEADERS)) res.setHeader(k, v);
+    res.setHeader("Set-Cookie", clearCookieHeader());
+    res.status(200).json({ ok: true });
+    return;
+  }
   const r = run(req.body, process.env, Math.floor(Date.now() / 1000));
   for (const [k, v] of Object.entries(SECURITY_HEADERS)) res.setHeader(k, v);
   if (r.setCookie) res.setHeader("Set-Cookie", r.setCookie);

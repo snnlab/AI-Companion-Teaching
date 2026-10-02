@@ -8,8 +8,8 @@ function streamOf(obj: unknown): ReadableStream<Uint8Array> {
 const { put, get, list } = vi.hoisted(() => ({ put: vi.fn(), get: vi.fn(), list: vi.fn() }));
 vi.mock("@vercel/blob", () => ({ put, get, list }));
 
-import { run } from "./my-submission";
-import { hashToken } from "../lib/roster";
+import { run } from "./mySubmission";
+import { hashToken } from "./roster";
 
 const PEPPER = "pepper";
 const ENV = { BLOB_READ_WRITE_TOKEN: "blob-tok", ROSTER_TOKEN_PEPPER: PEPPER };

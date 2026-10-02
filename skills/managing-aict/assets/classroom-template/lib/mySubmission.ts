@@ -7,13 +7,14 @@
 // One submission per call for the same reason as GET /api/submissions/:id
 // ?key= — a Vercel Function response is capped at 4.5 MB, and a stored
 // envelope is kept under 4.4 MB by submit.py.
-import type { VercelRequest, VercelResponse } from "@vercel/node";
-import { SECURITY_HEADERS } from "../lib/gate.js";
-import { resolveToken } from "../lib/roster.js";
-import { getSubmission } from "../lib/submissions.js";
-import { getRelease } from "../lib/release.js";
-import { IDEMPOTENCY_KEY_RE } from "../lib/validate.js";
-import { str } from "../lib/reverify.js";
+//
+// Served by api/my-comments.ts (vercel.json rewrites /api/my-submission to
+// it) rather than by a function of its own: Vercel's Hobby plan allows 12
+// functions per deployment, and this server sits close to that.
+import { resolveToken } from "./roster.js";
+import { getSubmission } from "./submissions.js";
+import { getRelease } from "./release.js";
+import { IDEMPOTENCY_KEY_RE } from "./validate.js";
 
 export interface RunResult { status: number; json: unknown }
 
@@ -59,11 +60,4 @@ export async function run(
       payload: s.payload,
     },
   };
-}
-
-export default async function handler(req: VercelRequest, res: VercelResponse): Promise<void> {
-  const query = req.query as Record<string, unknown>;
-  const r = await run(req.method ?? "GET", req.headers as HeaderBag, str(query.key), process.env);
-  for (const [k, v] of Object.entries(SECURITY_HEADERS)) res.setHeader(k, v);
-  res.status(r.status).json(r.json);
 }
