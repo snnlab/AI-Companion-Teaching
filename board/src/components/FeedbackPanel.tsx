@@ -9,6 +9,7 @@ import type {
   StoredComment,
 } from "../lib/types";
 import { VIEW_LABEL } from "../lib/feedback";
+import { fmtDate } from "../lib/fmtDate";
 
 export type SubmitState =
   | "idle"
@@ -18,12 +19,12 @@ export type SubmitState =
   | "downloaded";
 
 // One annotation's card in the panel list. Shared by local pending items
-// (deletable, optionally with a hosted Save action) and read-only server
-// comments (hosted mode: no delete — comments can't be edited or deleted
-// once sent).
+// (deletable, optionally with a hosted Save action) and sent server comments
+// (editable/deletable only on the classroom roster, which has the routes).
 export function AnnotationCard({
   a,
   sentBy,
+  editedAt,
   stale,
   onDelete,
   saveAction,
@@ -37,6 +38,7 @@ export function AnnotationCard({
 }: {
   a: Annotation;
   sentBy?: string;
+  editedAt?: string;
   stale?: boolean;
   onDelete?: () => void;
   saveAction?: ReactNode;
@@ -115,7 +117,8 @@ export function AnnotationCard({
             <span className="font-medium text-stone-700 dark:text-stone-300">
               {VIEW_LABEL[a.view]}
             </span>
-            {a.sectionHeading && <span>· {a.sectionHeading}</span>}
+            {/* The manuscript's section is the literal "manuscript" — no news. */}
+            {a.sectionHeading && a.view !== "manuscript" && <span>· {a.sectionHeading}</span>}
             {a.author && (
               <span className="rounded bg-violet-100 dark:bg-violet-900/50 px-1 py-0.5 font-medium text-violet-700 dark:text-violet-300">
                 via {a.author}
@@ -143,6 +146,11 @@ export function AnnotationCard({
         {sentBy && (
           <span className="rounded bg-stone-100 dark:bg-stone-800 px-1 py-0.5 font-medium text-stone-600 dark:text-stone-300">
             {sentBy}
+          </span>
+        )}
+        {editedAt && (
+          <span className="italic" title={`Edited ${fmtDate(editedAt)}`}>
+            edited
           </span>
         )}
         {stale && (
@@ -244,6 +252,12 @@ export interface FeedbackPanelProps {
   onRemove: (id: string) => void;
   onSaveHosted: (a: Annotation) => void;
   onEdit: (id: string, text: string) => void;
+  /** Classroom roster only: the sent comments can be changed. */
+  canEditSent?: boolean;
+  /** Snapshot board: just the instructor's comments, no drafting/sending. */
+  readOnly?: boolean;
+  onEditSent?: (id: string, text: string) => Promise<boolean>;
+  onDeleteSent?: (id: string) => Promise<boolean>;
   onCardClick?: (a: Annotation) => void;
   onClose: () => void;
   onSubmit: () => void;
@@ -254,15 +268,24 @@ export interface FeedbackPanelProps {
 export default function FeedbackPanel(p: FeedbackPanelProps) {
   const [editingId, setEditingId] = useState<string | null>(null);
   const [draft, setDraft] = useState("");
+  // Sent-comment edits go to the server: a delete needs a second click, and a
+  // failure is reported on the card instead of losing the instructor's text.
+  const [confirmSentDelete, setConfirmSentDelete] = useState<string | null>(null);
+  const [sentBusy, setSentBusy] = useState<string | null>(null);
+  const [sentError, setSentError] = useState<{ id: string; msg: string } | null>(null);
   // If the edited annotation disappears (a hosted per-card Save completes, or a
   // request clears drafts), clear editingId so submit/download/copy don't stay
   // frozen on a comment that no longer exists.
   useEffect(() => {
-    if (editingId !== null && !p.annotations.some((a) => a.id === editingId)) {
+    if (
+      editingId !== null &&
+      !p.annotations.some((a) => a.id === editingId) &&
+      !p.serverLive.some((c) => c.id === editingId)
+    ) {
       setEditingId(null);
       setDraft("");
     }
-  }, [p.annotations, editingId]);
+  }, [p.annotations, p.serverLive, editingId]);
   const shell =
     p.variant === "docked"
       ? "sticky flex w-[380px] shrink-0 flex-col border-l border-stone-200 dark:border-stone-800 bg-white dark:bg-stone-900"
@@ -271,7 +294,7 @@ export default function FeedbackPanel(p: FeedbackPanelProps) {
     <aside className={shell} style={p.style}>
       <div className="flex items-center justify-between border-b border-stone-200 dark:border-stone-800 px-4 py-3">
         <h2 className="text-sm font-semibold text-stone-800 dark:text-stone-200">
-          Feedback ({p.annotations.length})
+          {p.readOnly ? `Instructor comments (${p.serverLive.length})` : `Feedback (${p.annotations.length})`}
         </h2>
         <button
           className="rounded px-2 py-1 text-xs text-stone-500 hover:bg-stone-100 dark:hover:bg-stone-800"
@@ -285,7 +308,9 @@ export default function FeedbackPanel(p: FeedbackPanelProps) {
           p.serverLive.length === 0 &&
           p.serverStale.length === 0 && (
             <p className="p-4 text-center text-xs text-stone-400 dark:text-stone-500">
-              Select text in any view or add a general comment.
+              {p.readOnly
+                ? "No comments on this submission."
+                : "Select text in any view or add a general comment."}
             </p>
           )}
         {p.annotations.map((a) => (
@@ -313,27 +338,100 @@ export default function FeedbackPanel(p: FeedbackPanelProps) {
                   >
                     {p.savingIds.has(a.id) ? "Saving…" : "Save"}
                   </button>
-                  <span className="text-[10px] text-stone-400 dark:text-stone-500">
-                    Comments can’t be edited or deleted once sent.
-                  </span>
+                  {!p.canEditSent && (
+                    <span className="text-[10px] text-stone-400 dark:text-stone-500">
+                      Comments can’t be edited or deleted once sent.
+                    </span>
+                  )}
                 </div>
               ) : undefined
             }
           />
         ))}
-        {p.hosted && p.serverLive.length > 0 && (
-          <div className="pt-2">
-            <h3 className="px-0.5 pb-1 text-[10px] font-semibold uppercase tracking-wide text-stone-400 dark:text-stone-500">
-              Sent
-            </h3>
+        {(p.hosted || p.readOnly) && p.serverLive.length > 0 && (
+          <div className={p.readOnly ? "" : "pt-2"}>
+            {!p.readOnly && (
+              <h3 className="px-0.5 pb-1 text-[10px] font-semibold uppercase tracking-wide text-stone-400 dark:text-stone-500">
+                Sent
+              </h3>
+            )}
             <div className="space-y-2">
-              {p.serverLive.map((c) => (
-                <AnnotationCard key={c.id} a={c.annotation} sentBy={c.author} />
-              ))}
+              {p.serverLive.map((c) => {
+                // Card id = server id, the id its highlight paints under.
+                const a = { ...c.annotation, id: c.id } as Annotation;
+                const editable = !!(p.canEditSent && p.onEditSent && p.onDeleteSent);
+                const idle = editingId === null && sentBusy === null;
+                return (
+                  <AnnotationCard
+                    key={c.id}
+                    a={a}
+                    sentBy={c.author}
+                    editedAt={c.editedAt}
+                    onOpen={p.onCardClick ? () => p.onCardClick!(a) : undefined}
+                    onDelete={editable && idle ? () => { setSentError(null); setConfirmSentDelete(c.id); } : undefined}
+                    editing={editingId === c.id}
+                    draft={editingId === c.id ? draft : undefined}
+                    onEditStart={
+                      editable && idle
+                        ? () => { setSentError(null); setConfirmSentDelete(null); setEditingId(c.id); setDraft(a.comment); }
+                        : undefined
+                    }
+                    onEditChange={setDraft}
+                    onEditSave={async () => {
+                      const text = draft.trim();
+                      if (!text || sentBusy) return;
+                      setSentBusy(c.id);
+                      const ok = await p.onEditSent!(c.id, text);
+                      setSentBusy(null);
+                      if (ok) setEditingId(null);
+                      else setSentError({ id: c.id, msg: "Couldn’t save the change — try again." });
+                    }}
+                    onEditCancel={() => setEditingId(null)}
+                    saveAction={
+                      confirmSentDelete === c.id || sentError?.id === c.id ? (
+                        <div
+                          className="mt-1.5 flex items-center gap-2 border-t border-stone-100 dark:border-stone-800 pt-1.5 text-[11px]"
+                          onClick={(e) => e.stopPropagation()}
+                        >
+                          {sentError?.id === c.id && (
+                            <span role="alert" className="mr-auto text-red-700 dark:text-red-400">{sentError.msg}</span>
+                          )}
+                          {confirmSentDelete === c.id && (
+                            <>
+                              <span className="mr-auto text-stone-600 dark:text-stone-300">
+                                Delete this comment? The student will no longer see it.
+                              </span>
+                              <button
+                                className="rounded px-2 py-0.5 text-stone-500 hover:bg-stone-100 dark:hover:bg-stone-800"
+                                onClick={() => setConfirmSentDelete(null)}
+                              >
+                                Cancel
+                              </button>
+                              <button
+                                className="rounded bg-red-600 px-2 py-0.5 font-medium text-white hover:bg-red-700 disabled:opacity-40"
+                                disabled={sentBusy !== null}
+                                onClick={async () => {
+                                  setSentBusy(c.id);
+                                  const ok = await p.onDeleteSent!(c.id);
+                                  setSentBusy(null);
+                                  setConfirmSentDelete(null);
+                                  if (!ok) setSentError({ id: c.id, msg: "Couldn’t delete — try again." });
+                                }}
+                              >
+                                {sentBusy === c.id ? "Deleting…" : "Delete"}
+                              </button>
+                            </>
+                          )}
+                        </div>
+                      ) : undefined
+                    }
+                  />
+                );
+              })}
             </div>
           </div>
         )}
-        {p.hosted && p.serverStale.length > 0 && (
+        {(p.hosted || p.readOnly) && p.serverStale.length > 0 && (
           <div className="pt-2">
             <h3 className="px-0.5 pb-1 text-[10px] font-semibold text-amber-700 dark:text-amber-400">
               Written before the board was last updated — the student still
@@ -352,6 +450,7 @@ export default function FeedbackPanel(p: FeedbackPanelProps) {
           </div>
         )}
       </div>
+      {!p.readOnly && (
       <div className="border-t border-stone-200 dark:border-stone-800 p-3">
         {p.submitState === "failed" && (
           <div className="mb-2 rounded-md border border-red-200 dark:border-red-900 bg-red-50 dark:bg-red-950 p-2 text-xs text-red-800 dark:text-red-300">
@@ -425,6 +524,7 @@ export default function FeedbackPanel(p: FeedbackPanelProps) {
           </div>
         )}
       </div>
+      )}
     </aside>
   );
 }

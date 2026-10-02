@@ -5,7 +5,7 @@ import type { Annotation, BoardData } from "./types";
 import { REPORT_DOCKEY_RE } from "./reportMarker";
 
 export interface NavTarget {
-  tab: "tracker" | "plans" | "results" | "timeline" | "archive" | "reports";
+  tab: "tracker" | "plans" | "results" | "timeline" | "archive" | "reports" | "manuscript";
   component?: string;
   planPath?: string; // -> PlanReader resolves to its doc index
   resultsVersion?: number; // -> Results resolves to its bundle index
@@ -53,6 +53,8 @@ export function navTargetFor(a: Annotation, _data: BoardData): NavTarget {
       switch (a.view) {
         case "tracker":
           return { tab: "tracker", annotationId: a.id, anchored: a.anchored };
+        case "manuscript":
+          return { tab: "manuscript", annotationId: a.id, anchored: a.anchored };
         case "timeline":
           return {
             tab: "timeline",

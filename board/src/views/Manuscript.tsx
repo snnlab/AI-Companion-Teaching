@@ -1,5 +1,8 @@
-import { useEffect, useRef } from "react";
+import { useEffect, useRef, useState } from "react";
 import Markdown from "../components/Markdown";
+import DocxHtml from "../components/DocxHtml";
+import PrintManuscript, { type PrintComment } from "../components/PrintManuscript";
+import { fmtDate } from "../lib/fmtDate";
 import AnnotationLayer, {
   GeneralCommentBox,
   type AnchoredSelection,
@@ -39,6 +42,8 @@ export default function Manuscript({
   const manuscript = data.files.manuscript ?? null;
   const readable = manuscript && manuscript.format !== "unsupported";
   const bodyRef = useRef<HTMLElement>(null);
+  const [printing, setPrinting] = useState(false);
+  const [withComments, setWithComments] = useState(true);
 
   useEffect(() => {
     onOutline?.(readable ? outlineFromContainer(bodyRef.current) : []);
@@ -86,6 +91,17 @@ export default function Manuscript({
   );
   const addComment = (partial: AnchoredSelection) =>
     onAddDocComment({ ...partial, view: "manuscript", docKey: manuscript.path });
+  const printComments: PrintComment[] = [
+    ...docAnnotations.map((a) => ({ a, author: a.author })),
+    ...annotations
+      .filter((a): a is Extract<Annotation, { type: "general" }> => a.type === "general" && a.view === "Manuscript")
+      .map((a) => ({ a })),
+  ];
+  const printSubtitle = [
+    manuscript.path,
+    data.snapshot ? `submitted ${fmtDate(data.snapshot.submittedAt)}` : `board of ${data.generatedAt.slice(0, 16).replace("T", " ")}`,
+    `printed ${fmtDate(new Date().toISOString())}`,
+  ].join(" · ");
 
   const body = (
     <section
@@ -94,7 +110,11 @@ export default function Manuscript({
       data-annot-scope="manuscript"
       data-annot-section="manuscript"
     >
-      <Markdown source={manuscript.content} assets={manuscript.assets ?? NO_ASSETS} math />
+      {manuscript.format === "docx-html" ? (
+        <DocxHtml html={manuscript.content} assets={manuscript.assets ?? NO_ASSETS} />
+      ) : (
+        <Markdown source={manuscript.content} assets={manuscript.assets ?? NO_ASSETS} math />
+      )}
     </section>
   );
 
@@ -103,18 +123,45 @@ export default function Manuscript({
       {manuscript.format === "docx-text" && manuscript.note && (
         <Notice text={manuscript.note} />
       )}
-      {canAnnotate ? (
-        <AnnotationLayer
-          docKey={manuscript.path}
-          annotations={docAnnotations}
-          onPaintResult={onPaintResult}
-          onAdd={addComment}
+      <div className="mb-2 flex max-w-[52rem] flex-wrap items-center justify-end gap-3 text-xs text-stone-600 dark:text-stone-300">
+        {printComments.length > 0 && (
+          <label className="flex cursor-pointer items-center gap-1.5">
+            <input
+              type="checkbox"
+              checked={withComments}
+              onChange={(e) => setWithComments(e.target.checked)}
+            />
+            Include comments ({printComments.length})
+          </label>
+        )}
+        <button
+          type="button"
+          className="rounded-md border border-stone-300 dark:border-stone-600 px-2.5 py-1 font-medium hover:border-stone-500 dark:hover:border-stone-400"
+          onClick={() => setPrinting(true)}
+          title="Opens your browser's print dialog — choose “Save as PDF” there for a PDF"
         >
-          {body}
-        </AnnotationLayer>
-      ) : (
-        body
+          Print / Save as PDF
+        </button>
+      </div>
+      {printing && (
+        <PrintManuscript
+          manuscript={manuscript}
+          title={data.project.name}
+          subtitle={printSubtitle}
+          comments={printComments}
+          includeComments={withComments && printComments.length > 0}
+          onDone={() => setPrinting(false)}
+        />
       )}
+      <AnnotationLayer
+        readOnly={!canAnnotate}
+        docKey={manuscript.path}
+        annotations={docAnnotations}
+        onPaintResult={onPaintResult}
+        onAdd={addComment}
+      >
+        {body}
+      </AnnotationLayer>
       {canAnnotate && (
         <GeneralCommentBox view="Manuscript" onAdd={onAddGeneral} />
       )}

@@ -1225,6 +1225,15 @@ class TestSeedAnnotations(unittest.TestCase):
             dict(common, scope="results", component="01-x")))
         self.assertFalse(board._valid_seed(
             dict(common, scope="results", component="01-x", resultsVersion=True)))
+        # manuscript: needs a docKey; occurrenceIndex optional but int if present
+        self.assertTrue(board._valid_seed(
+            dict(common, scope="manuscript", docKey="plans/manuscript.md")))
+        self.assertTrue(board._valid_seed(
+            dict(common, scope="manuscript", docKey="plans/manuscript.md",
+                 occurrenceIndex=1)))
+        self.assertFalse(board._valid_seed(dict(common, scope="manuscript")))
+        self.assertFalse(board._valid_seed(
+            dict(common, scope="manuscript", docKey="m", occurrenceIndex="1")))
         # an unrecognized scope is rejected outright
         self.assertFalse(board._valid_seed(dict(common, scope="nonsense")))
 
@@ -2853,12 +2862,12 @@ class TestPullStaleness(unittest.TestCase):
             self.assertLess(doc.index("fresh"), doc.index("may refer to an older version"))
             self.assertIn("Manuscript", doc)  # _VIEW_LABEL entry
 
-    def test_manuscript_docx_staleness_uses_extracted_text_not_raw_bytes(self):
+    def test_manuscript_docx_staleness_uses_converted_html_not_raw_bytes(self):
         with tempfile.TemporaryDirectory() as d:
             root = Path(d); make_project(root)
             (root / "plans" / "manuscript.docx").write_bytes(
                 TestExtractDocxText._make_docx([("Draft body.", None)]))
-            current = board.fnv1a_hex(board._extract_docx_text(root / "plans" / "manuscript.docx"))
+            current = board.fnv1a_hex(board._docx_to_html(root / "plans" / "manuscript.docx")[0])
             fresh = {"type": "doc-comment", "view": "manuscript",
                      "docKey": "plans/manuscript.docx", "quote": "q", "comment": "fresh",
                      "docHash": current}
@@ -3447,7 +3456,7 @@ class TestExtractDocxText(unittest.TestCase):
             z.writestr("word/document.xml", xml)
         return buf.getvalue()
 
-    def test_extracts_paragraphs_and_prefixes_headings(self):
+    def test_paragraphs_and_headings_become_html(self):
         with tempfile.TemporaryDirectory() as d:
             p = Path(d) / "m.docx"
             p.write_bytes(self._make_docx([
@@ -3456,14 +3465,14 @@ class TestExtractDocxText(unittest.TestCase):
                 ("A subsection", "Heading2"),
             ]))
             self.assertEqual(
-                board._extract_docx_text(p),
-                "# Title\n\nSome body text.\n\n## A subsection")
+                board._docx_to_html(p)[0],
+                "<h1>Title</h1><p>Some body text.</p><h2>A subsection</h2>")
 
     def test_empty_paragraphs_are_dropped(self):
         with tempfile.TemporaryDirectory() as d:
             p = Path(d) / "m.docx"
             p.write_bytes(self._make_docx([("Kept", None), ("   ", None)]))
-            self.assertEqual(board._extract_docx_text(p), "Kept")
+            self.assertEqual(board._docx_to_html(p)[0], "<p>Kept</p>")
 
     def test_embedded_images_become_figures_with_assets(self):
         w = self._W
@@ -3490,9 +3499,11 @@ class TestExtractDocxText(unittest.TestCase):
             root = Path(d); make_project(root)
             (root / "plans" / "manuscript.docx").write_bytes(buf.getvalue())
             m = board.collect_payload(root, "live", None)["files"]["manuscript"]
-            self.assertEqual(m["format"], "docx-text")
+            self.assertEqual(m["format"], "docx-html")
             self.assertEqual(m["content"],
-                             "Before.\n\n![](docx-media/image1.png)\n\nFigure 1. Caption.")
+                             '<p>Before.</p><p><img src="docx-media/image1.png" alt=""></p>'
+                             "<p>Figure 1. Caption.</p>")
+            self.assertNotIn("note", m)
             self.assertEqual(list(m["assets"]), ["docx-media/image1.png"])
             self.assertTrue(m["assets"]["docx-media/image1.png"].startswith("data:image/png;base64,"))
 
@@ -3519,7 +3530,15 @@ class TestDocxEquations(unittest.TestCase):
         with tempfile.TemporaryDirectory() as d:
             p = Path(d) / "m.docx"
             p.write_bytes(buf.getvalue())
-            return board._extract_docx_text(p)
+            html = board._docx_to_html(p)[0]
+        # Back to the $…$ notation these cases were written in: one
+        # paragraph, each math span as its TeX.
+        def back(m):
+            tex = (m.group(1).replace("&quot;", '"').replace("&lt;", "<")
+                   .replace("&gt;", ">").replace("&amp;", "&"))
+            return ("$$%s$$" if m.group(2) else "$%s$") % tex
+        html = re.sub(r'<span class="math" data-tex="([^"]*)"( data-display="1")?></span>', back, html)
+        return re.sub(r"</?p>", "", html).replace("&amp;", "&")
 
     @staticmethod
     def _r(t):
@@ -3570,6 +3589,170 @@ class TestDocxEquations(unittest.TestCase):
         out = self._text('<w:p><w:r><w:t>Plain </w:t></w:r>'
                          '<w:r><w:t>text.</w:t></w:r></w:p>')
         self.assertEqual(out, "Plain text.")
+
+
+class TestDocxToHtml(unittest.TestCase):
+    """Word -> HTML: what an instructor sees of a .docx manuscript."""
+
+    W = "http://schemas.openxmlformats.org/wordprocessingml/2006/main"
+    NS = ('xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main" '
+          'xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships" '
+          'xmlns:a="http://schemas.openxmlformats.org/drawingml/2006/main" '
+          'xmlns:wp="http://schemas.openxmlformats.org/drawingml/2006/wordprocessingDrawing" '
+          'xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006" '
+          'xmlns:v="urn:schemas-microsoft-com:vml"')
+    REL_NS = "http://schemas.openxmlformats.org/package/2006/relationships"
+
+    def html(self, body, parts=None, rels=""):
+        buf = io.BytesIO()
+        with zipfile.ZipFile(buf, "w") as z:
+            z.writestr("word/document.xml",
+                       '<w:document %s><w:body>%s</w:body></w:document>' % (self.NS, body))
+            z.writestr("word/_rels/document.xml.rels",
+                       '<Relationships xmlns="%s">%s</Relationships>' % (self.REL_NS, rels))
+            for name, data in (parts or {}).items():
+                z.writestr(name, data)
+        with tempfile.TemporaryDirectory() as d:
+            p = Path(d) / "m.docx"
+            p.write_bytes(buf.getvalue())
+            return board._docx_to_html(p)
+
+    @staticmethod
+    def r(text, rpr=""):
+        return '<w:r>%s<w:t xml:space="preserve">%s</w:t></w:r>' % (
+            "<w:rPr>%s</w:rPr>" % rpr if rpr else "", text)
+
+    def test_run_formatting_merges_split_runs(self):
+        r = self.r
+        html, _ = self.html("<w:p>%s%s%s%s%s</w:p>" % (
+            r("Plain "), r("bo", "<w:b/>"), r("ld", "<w:b/>"), r(" x"),
+            r("2", '<w:vertAlign w:val="superscript"/>')))
+        self.assertEqual(html, "<p>Plain <strong>bold</strong> x<sup>2</sup></p>")
+        html, _ = self.html("<w:p>%s%s%s</w:p>" % (
+            r("i", "<w:i/>"), r("u", '<w:u w:val="single"/>'), r("not", '<w:b w:val="0"/>')))
+        self.assertEqual(html, "<p><em>i</em><u>u</u>not</p>")
+
+    def test_text_is_escaped(self):
+        html, _ = self.html("<w:p>%s</w:p>" % self.r("a &lt;script&gt; &amp; b"))
+        self.assertEqual(html, "<p>a &lt;script&gt; &amp; b</p>")
+
+    def test_heading_from_localized_style_name_and_outline_level(self):
+        styles = ('<w:styles xmlns:w="%s">'
+                  '<w:style w:type="paragraph" w:styleId="1"><w:name w:val="heading 1"/></w:style>'
+                  '<w:style w:type="paragraph" w:styleId="a5"><w:name w:val="My Head"/>'
+                  '<w:pPr><w:outlineLvl w:val="1"/></w:pPr></w:style>'
+                  '<w:style w:type="paragraph" w:styleId="a6"><w:name w:val="caption"/></w:style>'
+                  '</w:styles>' % self.W)
+        body = ''.join('<w:p><w:pPr><w:pStyle w:val="%s"/></w:pPr>%s</w:p>' % (sid, self.r(t))
+                       for sid, t in (("1", "One"), ("a5", "Two"), ("a6", "Table 1. Results")))
+        html, _ = self.html(body, {"word/styles.xml": styles})
+        self.assertEqual(html, '<h1>One</h1><h2>Two</h2><p class="caption">Table 1. Results</p>')
+
+    def test_lists_nest_and_number(self):
+        numbering = ('<w:numbering xmlns:w="%s">'
+                     '<w:abstractNum w:abstractNumId="0"><w:lvl w:ilvl="0"><w:numFmt w:val="bullet"/></w:lvl>'
+                     '<w:lvl w:ilvl="1"><w:numFmt w:val="lowerLetter"/></w:lvl></w:abstractNum>'
+                     '<w:num w:numId="1"><w:abstractNumId w:val="0"/></w:num></w:numbering>' % self.W)
+
+        def li(t, lvl):
+            return ('<w:p><w:pPr><w:numPr><w:ilvl w:val="%d"/><w:numId w:val="1"/></w:numPr></w:pPr>%s</w:p>'
+                    % (lvl, self.r(t)))
+        body = li("A", 0) + li("a1", 1) + li("a2", 1) + li("B", 0) + "<w:p>%s</w:p>" % self.r("After")
+        html, _ = self.html(body, {"word/numbering.xml": numbering})
+        self.assertEqual(
+            html, '<ul><li>A<ol type="a"><li>a1</li><li>a2</li></ol></li><li>B</li></ul><p>After</p>')
+
+    def test_table_merges_header_widths_and_three_line_borders(self):
+        def tc(text, tcpr=""):
+            return "<w:tc>%s<w:p>%s</w:p></w:tc>" % ("<w:tcPr>%s</w:tcPr>" % tcpr if tcpr else "", self.r(text))
+        body = (
+            '<w:tbl><w:tblPr><w:tblBorders><w:top w:val="single"/><w:bottom w:val="single"/>'
+            '<w:insideH w:val="nil"/><w:insideV w:val="nil"/></w:tblBorders></w:tblPr>'
+            '<w:tblGrid><w:gridCol w:w="3000"/><w:gridCol w:w="1000"/><w:gridCol w:w="1000"/></w:tblGrid>'
+            '<w:tr><w:trPr><w:tblHeader/></w:trPr>'
+            + tc("Model", '<w:vMerge w:val="restart"/><w:tcBorders><w:bottom w:val="single"/></w:tcBorders>')
+            + tc("Estimate", '<w:gridSpan w:val="2"/><w:tcBorders><w:bottom w:val="single"/></w:tcBorders>')
+            + '</w:tr><w:tr>'
+            + tc("", "<w:vMerge/>") + tc("b") + tc("SE")
+            + '</w:tr><w:tr>' + tc("CLPM") + tc("0.07") + tc("0.03") + '</w:tr></w:tbl>')
+        html, _ = self.html(body)
+        self.assertIn('<colgroup><col style="width:60%"><col style="width:20%"><col style="width:20%"></colgroup>', html)
+        self.assertIn('<thead><tr><th rowspan="2" class="bt bb">Model</th><th colspan="2" class="bt bb">Estimate</th></tr></thead>', html)
+        # the merged-away cell is not emitted; the bottom rule is on the last row only
+        self.assertIn("<tbody><tr><td>b</td><td>SE</td></tr><tr><td class=\"bb\">CLPM</td>", html)
+        self.assertTrue(html.startswith('<div class="tbl"><table>'))
+
+    def test_table_style_grid_from_styles_xml(self):
+        styles = ('<w:styles xmlns:w="%s"><w:style w:type="table" w:styleId="TableGrid">'
+                  '<w:tblPr><w:tblBorders><w:top w:val="single"/><w:left w:val="single"/><w:bottom w:val="single"/>'
+                  '<w:right w:val="single"/><w:insideH w:val="single"/><w:insideV w:val="single"/>'
+                  '</w:tblBorders></w:tblPr></w:style></w:styles>' % self.W)
+        body = ('<w:tbl><w:tblPr><w:tblStyle w:val="TableGrid"/></w:tblPr>'
+                '<w:tr><w:tc><w:p>%s</w:p></w:tc><w:tc><w:p><w:pPr><w:jc w:val="center"/></w:pPr>%s</w:p></w:tc></w:tr></w:tbl>'
+                % (self.r("x"), self.r("1.0")))
+        html, _ = self.html(body, {"word/styles.xml": styles})
+        self.assertIn('<td class="bt bb bl br">x</td><td class="bt bb bl br ac">1.0</td>', html)
+
+    def test_footnotes_hyperlinks_and_field_codes(self):
+        footnotes = ('<w:footnotes xmlns:w="%s">'
+                     '<w:footnote w:type="separator" w:id="-1"><w:p/></w:footnote>'
+                     '<w:footnote w:id="2"><w:p>%s</w:p></w:footnote></w:footnotes>'
+                     % (self.W, self.r("See Hamaker (2015).")))
+        body = ('<w:p>%s<w:r><w:footnoteReference w:id="2"/></w:r>'
+                '<w:hyperlink r:id="rId9">%s</w:hyperlink>'
+                '<w:r><w:fldChar w:fldCharType="begin"/></w:r>'
+                '<w:r><w:instrText>ADDIN ZOTERO_ITEM CSL_CITATION {"secret":1}</w:instrText></w:r>'
+                '<w:r><w:fldChar w:fldCharType="separate"/></w:r>%s<w:r><w:fldChar w:fldCharType="end"/></w:r>'
+                '<w:del><w:r><w:delText>deleted words</w:delText></w:r></w:del>'
+                '<w:hyperlink r:id="rId10">%s</w:hyperlink></w:p>'
+                % (self.r("Claim."), self.r(" site"), self.r(" (Kim, 2020)"), self.r(" bad")))
+        rels = ('<Relationship Id="rId9" Type="hyperlink" Target="https://example.org/a" TargetMode="External"/>'
+                '<Relationship Id="rId10" Type="hyperlink" Target="javascript:alert(1)" TargetMode="External"/>')
+        html, _ = self.html(body, {"word/footnotes.xml": footnotes}, rels)
+        self.assertEqual(
+            html,
+            '<p>Claim.<sup class="fn"><a href="#fn-1" id="fnref-1">1</a></sup>'
+            '<a href="https://example.org/a"> site</a> (Kim, 2020) bad</p>'
+            '<section class="footnotes"><ol><li id="fn-1"><p>See Hamaker (2015).</p></li></ol></section>')
+
+    def test_figures_sized_placeholders_and_textbox_not_duplicated(self):
+        def drawing(rid, cx=1905000, cy=952500, anchor=False):
+            holder = "wp:anchor" if anchor else "wp:inline"
+            return ('<w:r><w:drawing><%s><wp:extent cx="%d" cy="%d"/><wp:docPr id="1" name="p" descr="Fig A"/>'
+                    '<a:graphic><a:graphicData uri="http://schemas.openxmlformats.org/drawingml/2006/picture">'
+                    '<a:blip r:embed="%s"/></a:graphicData></a:graphic></%s></w:drawing></w:r>'
+                    % (holder, cx, cy, rid, holder))
+        chart = ('<w:r><w:drawing><wp:inline><wp:extent cx="1" cy="1"/><a:graphic>'
+                 '<a:graphicData uri="http://schemas.openxmlformats.org/drawingml/2006/chart"/>'
+                 '</a:graphic></wp:inline></w:drawing></w:r>')
+        textbox = ('<w:r><mc:AlternateContent><mc:Choice Requires="wps"><w:drawing><wp:anchor>'
+                   '<w:txbxContent><w:p>%s</w:p></w:txbxContent></wp:anchor></w:drawing></mc:Choice>'
+                   '<mc:Fallback><w:pict><v:shape><v:textbox><w:txbxContent><w:p>%s</w:p>'
+                   '</w:txbxContent></v:textbox></v:shape></w:pict></mc:Fallback></mc:AlternateContent></w:r>'
+                   % (self.r("Boxed note"), self.r("Boxed note")))
+        body = ("<w:p>%s</w:p><w:p>%s</w:p><w:p>%s</w:p><w:p>%s%s</w:p>"
+                % (drawing("rId1"), drawing("rId2", anchor=True), chart, self.r("Body"), textbox))
+        rels = ('<Relationship Id="rId1" Type="image" Target="media/image1.png"/>'
+                '<Relationship Id="rId2" Type="image" Target="media/image2.emf"/>')
+        html, assets = self.html(body, {"word/media/image1.png": b"\x89PNG", "word/media/image2.emf": b"emf"}, rels)
+        self.assertIn('<p><img src="docx-media/image1.png" alt="Fig A" width="200" height="100"></p>', html)
+        self.assertIn("EMF/WMF image", html)
+        self.assertIn("native Word chart", html)
+        self.assertEqual(html.count("Boxed note"), 1)
+        self.assertIn("<p>Body</p><p>Boxed note</p>", html)
+        self.assertEqual(list(assets), ["docx-media/image1.png"])  # only what the HTML references
+        self.assertNotIn("base64", html)  # bytes never inline in the HTML
+
+    def test_real_world_manual_stays_compact(self):
+        """The repo's own Word manual: tables, lists, figures — and the
+        converted HTML stays a small fraction of the 4.4 MB envelope cap."""
+        manual = Path(__file__).resolve().parents[2] / "AITCW-매뉴얼-교수자용.docx"
+        if not manual.is_file():
+            self.skipTest("manual .docx not in this checkout")
+        html, assets = board._docx_to_html(manual)
+        self.assertGreaterEqual(html.count("<table>"), 20)
+        self.assertLess(len(html.encode("utf-8")), 100 * 1024)
+        self.assertTrue(all(v.startswith("data:image/") for v in assets.values()))
 
 
 class TestLauncherScript(unittest.TestCase):

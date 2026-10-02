@@ -748,8 +748,9 @@ export default function Results({
               )}
             </>
           );
-          return canAnnotate ? (
+          return (
             <AnnotationLayer
+              readOnly={!canAnnotate}
               docKey={bundle.dir}
               annotations={paintable}
               onPaintResult={onPaintResult}
@@ -757,8 +758,6 @@ export default function Results({
             >
               {bundleBody}
             </AnnotationLayer>
-          ) : (
-            bundleBody
           );
         })()}
 

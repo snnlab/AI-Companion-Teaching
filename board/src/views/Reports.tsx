@@ -282,18 +282,15 @@ export default function Reports({
 
       {/* body / empty states */}
       {rep ? (
-        canAnnotate ? (
-          <AnnotationLayer
-            docKey={rep.path}
-            annotations={paintable}
-            onPaintResult={onPaintResult}
-            onAdd={addSelectionComment}
-          >
-            {reportBody}
-          </AnnotationLayer>
-        ) : (
-          reportBody
-        )
+        <AnnotationLayer
+          readOnly={!canAnnotate}
+          docKey={rep.path}
+          annotations={paintable}
+          onPaintResult={onPaintResult}
+          onAdd={addSelectionComment}
+        >
+          {reportBody}
+        </AnnotationLayer>
       ) : noSubstance ? (
         <div className="rounded-lg border border-dashed border-stone-300 dark:border-stone-600 bg-white dark:bg-stone-900 p-10 text-center text-sm text-stone-500">
           <p className="mb-1 font-medium text-stone-600 dark:text-stone-300">

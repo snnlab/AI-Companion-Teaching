@@ -116,7 +116,7 @@ describe("inlined auth parity", () => {
   });
 
   it("matches lib/gate.ts's gateDecision for the exempt/gated route split", () => {
-    const routes = ["/api/login", "/api/logout", "/api/submissions", "/api/submissions/alice", "/api/comments", "/api/my-comments", "/api/push-subscribe", "/api/vapid-public-key", "/me", "/me.html", "/sw.js", "/api/roster", "/"];
+    const routes = ["/api/login", "/api/logout", "/api/submissions", "/api/submissions/alice", "/api/comments", "/api/my-comments", "/api/my-submission", "/api/push-subscribe", "/api/vapid-public-key", "/me", "/me.html", "/me/board", "/me-board.html", "/me/other", "/sw.js", "/api/roster", "/"];
     for (const pathname of routes) {
       const response = middleware(new Request(`https://roster.example${pathname}`));
       const decision = gateDecision(pathname, "GET", false);

@@ -6,6 +6,7 @@ routing pipeline is deliberately modeled on. Run:
     python3 -m unittest tests.test_check -v
 """
 import contextlib
+import json
 import io
 import os
 import sys
@@ -174,6 +175,49 @@ class TestCheck(unittest.TestCase):
             self.assertIn('"mode": "hosted"', text)
             self.assertEqual(classroom.read_pulled_comment_ids(root), {"p1"})
 
+    def test_manuscript_comment_seeds_the_manuscript_view(self):
+        ann = {
+            "type": "doc-comment", "view": "manuscript",
+            "docKey": "plans/manuscript.docx", "scope": "manuscript",
+            "sectionHeading": "manuscript", "occurrenceIndex": 2,
+            "quote": "stable traits", "comment": "Say which traits.",
+        }
+        s = check.annotation_to_seed({"author": "Prof. Kim", "annotation": ann})
+        self.assertEqual(s["scope"], "manuscript")
+        self.assertEqual(s["docKey"], "plans/manuscript.docx")
+        self.assertEqual(s["occurrenceIndex"], 2)
+        self.assertTrue(board._valid_seed(s))
+        # a bad occurrenceIndex degrades to the first match, never crashes
+        s2 = check.annotation_to_seed(
+            {"author": "K", "annotation": dict(ann, occurrenceIndex="x")})
+        self.assertEqual(s2["occurrenceIndex"], 0)
+
+    def test_edited_comment_is_pulled_again_marked_edited(self):
+        with self._project() as root:
+            self._configure(root)
+            with contextlib.redirect_stdout(io.StringIO()):
+                check.main()  # c1, c2 pulled (pre-edit ids, bare)
+            edited = dict(self.COMMENTS[0], editedAt="2026-08-26T09:00:00.000Z",
+                          annotation={"type": "general", "comment": "look again, closer"})
+            self._configure(root, comments=[edited, self.COMMENTS[1]])
+            out = io.StringIO()
+            with contextlib.redirect_stdout(out):
+                check.main()
+            text = out.getvalue()
+            self.assertIn("(edited by the instructor 2026-08-26) look again, closer", text)
+            self.assertNotIn("second submission too", text)  # unchanged: not re-pulled
+            self.assertIn("c1@2026-08-26T09:00:00.000Z", classroom.read_pulled_comment_ids(root))
+            # and a third run finds nothing new
+            out = io.StringIO()
+            with contextlib.redirect_stdout(out):
+                check.main()
+            self.assertIn("No new instructor feedback.", out.getvalue())
+
+    def test_seed_carries_the_server_comment_id(self):
+        s = check.annotation_to_seed(dict(self.PLAN_COMMENT))
+        self.assertEqual(s["commentId"], "p1")
+        self.assertTrue(board._valid_seed(s))
+
     def test_general_only_comments_write_no_seed_file(self):
         with self._project() as root:
             self._configure(root)  # COMMENTS are all type "general"
@@ -323,3 +367,133 @@ class TestCheck(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class TestHistory(unittest.TestCase):
+    """/ait:check --history / --open: past submissions reopened read-only."""
+
+    SHA = "a" * 64
+    PNG = b"\x89PNG-fake-bytes"
+    PAYLOAD = {
+        "schemaVersion": 2, "generatedAt": "2026-09-29T23:40", "mode": "submission",
+        "project": {"name": "p"}, "git": {"available": False},
+        "files": {
+            "masterPlan": {"path": "plans/master-plan.md", "content": "# MP"},
+            "decisionLog": {"path": "plans/decision-log.md", "content": "# DL"},
+            "executionPlans": [], "reviews": [],
+            "manuscript": {
+                "path": "plans/manuscript.md", "format": "markdown",
+                "content": "# Paper\n\nPanel studies routinely report that SES predicts later well-being.",
+                "assets": {"fig1.png": "aict-asset:" + "a" * 64},
+            },
+        },
+        "externalAssets": {"a" * 64: {"mime": "image/png", "size": 15, "parts": 1}},
+    }
+    MY = {
+        "studentId": "alice",
+        "comments": [{
+            "id": "c1", "author": "Prof. Kim", "shareHash": "0123456789abcdef",
+            "receivedAt": "2026-10-01T03:00:00.000Z", "editedAt": "2026-10-02T03:00:00.000Z",
+            "annotation": {"type": "doc-comment", "view": "manuscript", "docKey": "plans/manuscript.md",
+                           "quote": "routinely report", "comment": "Cite two of them."},
+        }],
+        "submissions": [
+            {"shareHash": "0123456789abcdef", "submittedAt": "2026-09-29T23:40:00+09:00",
+             "releasedAt": "2026-10-01T04:00:00.000Z"},
+            {"shareHash": "fedcba9876543210", "submittedAt": "2026-09-30T10:00:00+09:00",
+             "releasedAt": None},
+        ],
+    }
+
+    def setUp(self):
+        self._saved = (os.environ.get("CLAUDE_PLUGIN_DATA"), os.environ.get("AICT_NO_BOARD"),
+                       check._http_get_json, check._http_get_bytes, os.getcwd())
+        os.environ["AICT_NO_BOARD"] = "1"
+        self._tmp = tempfile.TemporaryDirectory()
+        self.root = Path(self._tmp.name)
+        make_project(self.root)
+        os.chdir(str(self.root))
+        os.environ["CLAUDE_PLUGIN_DATA"] = str(self.root / "data")
+        classroom.write_classroom_config(
+            self.root, {"serverUrl": "https://cls.example.edu", "token": "tok", "courseId": None})
+        self.calls = []
+
+        def get_json(url, headers):
+            self.calls.append(url)
+            if url.endswith("/api/my-comments"):
+                return json.loads(json.dumps(self.MY))
+            if "/api/my-submission?" in url:
+                return {"submittedAt": "2026-09-29T23:40:00+09:00", "releasedAt": "2026-10-01T04:00:00.000Z",
+                        "payload": json.loads(json.dumps(self.PAYLOAD))}
+            raise AssertionError(url)
+        check._http_get_json = get_json
+        check._http_get_bytes = lambda url, headers: self.PNG
+
+    def tearDown(self):
+        data, no_board, gj, gb, cwd = self._saved
+        os.chdir(cwd)
+        check._http_get_json, check._http_get_bytes = gj, gb
+        for k, v in (("CLAUDE_PLUGIN_DATA", data), ("AICT_NO_BOARD", no_board)):
+            if v is None:
+                os.environ.pop(k, None)
+            else:
+                os.environ[k] = v
+        self._tmp.cleanup()
+
+    def run_main(self, *argv):
+        out = io.StringIO()
+        with contextlib.redirect_stdout(out):
+            check.main(list(argv))
+        return out.getvalue()
+
+    def test_history_lists_only_released_submissions(self):
+        text = self.run_main("--history")
+        self.assertIn("1. submitted 2026-09-29 23:40", text)
+        self.assertIn("1 comment(s)", text)
+        self.assertNotIn("fedcba9876543210", text)  # never released
+
+    def test_open_writes_a_self_contained_board_and_feedback_text(self):
+        text = self.run_main("--open", "1")
+        out = check.history_dir(self.root, {"submittedAt": "2026-09-29T23:40:00+09:00",
+                                            "shareHash": "0123456789abcdef"})
+        board_html = (out / "board.html").read_text(encoding="utf-8")
+        self.assertIn('"mode": "snapshot"', board_html)
+        slot = board_html.split('<script id="board-data" type="application/json">', 1)[1].split("</script>", 1)[0]
+        self.assertIn('"fig1.png": "data:image/png;base64,', slot)  # figure inlined, no server needed
+        self.assertNotIn("aict-asset:", slot)
+        fb = (out / "feedback.md").read_text(encoding="utf-8")
+        self.assertIn("Manuscript (plans/manuscript.md)", fb)
+        self.assertIn("(edited %s)" % check._stamp("2026-10-02T03:00:00.000Z"), fb)  # local time
+        self.assertIn("Panel studies [[routinely report]] that SES", fb)
+        self.assertIn("Cite two of them.", fb)
+        self.assertIn("history board: ", text)
+        self.assertIn("feedback text: ", text)
+        # the history folder is gitignored by the board's own list
+        self.assertIn("/.aict-history/", board.GITIGNORE_LINES)
+
+    def test_reopen_uses_the_saved_copy_and_works_offline(self):
+        self.run_main("--open", "latest")
+        n_submission_fetches = sum("/api/my-submission" in u for u in self.calls)
+
+        def offline(url, headers):
+            raise urllib.error.URLError("down")
+        check._http_get_json = offline
+        text = self.run_main("--open", "1")
+        self.assertIn("saved copy", text)
+        self.assertEqual(n_submission_fetches, 1)
+        listing = self.run_main("--history")
+        self.assertIn("showing the copies saved on this machine", listing)
+        self.assertIn("· saved", listing)
+
+    def test_open_unknown_number_explains(self):
+        err = io.StringIO()
+        with contextlib.redirect_stderr(err), self.assertRaises(SystemExit):
+            check.main(["--open", "9"])
+        self.assertIn("--history", err.getvalue())
+
+    def test_quote_context_reads_an_html_manuscript(self):
+        payload = {"files": {"manuscript": {"path": "plans/manuscript.docx",
+                                            "content": "<p>Alpha <strong>beta</strong> gamma.</p><table><tr><td>x &amp; y</td></tr></table>"}}}
+        ctx = check.quote_context(payload, {"quote": "beta gamma", "docKey": "plans/manuscript.docx"})
+        self.assertIn("Alpha [[beta gamma]]", ctx)
+        self.assertIn("x & y", check.quote_context(payload, {"quote": "x & y"}))

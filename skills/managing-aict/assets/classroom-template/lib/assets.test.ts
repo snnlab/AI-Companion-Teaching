@@ -61,3 +61,12 @@ describe("parseExternalAssets / collectAssetRefs", () => {
     expect(refs.sort()).toEqual([s1, s2]);
   });
 });
+
+describe("collectAssetRefs (manuscript body)", () => {
+  it("counts a manuscript body sent separately as a reference to verify", async () => {
+    const { collectAssetRefs } = await import("./assets");
+    const sha = "b".repeat(64);
+    expect(collectAssetRefs({ files: { manuscript: { content: `aict-asset:${sha}`, assets: {} } } })).toEqual([sha]);
+    expect(collectAssetRefs({ files: { manuscript: { content: "<p>inline</p>" } } })).toEqual([]);
+  });
+});

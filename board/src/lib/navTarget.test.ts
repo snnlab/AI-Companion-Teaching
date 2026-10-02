@@ -9,6 +9,15 @@ function t(a: Record<string, unknown>) {
 }
 
 describe("navTargetFor", () => {
+  it("manuscript doc comment -> manuscript tab (not the tracker fallback)", () => {
+    expect(
+      t({
+        id: "m1", type: "doc-comment", view: "manuscript",
+        docKey: "plans/manuscript.docx", anchored: true,
+      }),
+    ).toMatchObject({ tab: "manuscript", annotationId: "m1", anchored: true });
+  });
+
   it("plan comment -> plans tab + plan path", () => {
     expect(
       t({

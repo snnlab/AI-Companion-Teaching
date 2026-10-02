@@ -32,6 +32,9 @@ export function gateDecision(
   // all) — api/my-comments.ts resolves and checks the token itself. Same
   // reasoning as the two exemptions above.
   if (pathname === "/api/my-comments") return { action: "allow" };
+  // GET /api/my-submission — bearer-only, the student's own released
+  // submission for the history board; api/my-submission.ts checks the token.
+  if (pathname === "/api/my-submission") return { action: "allow" };
   // POST/DELETE /api/push-subscribe — bearer-only (the student's own token),
   // same reasoning as /api/my-comments.
   if (pathname === "/api/push-subscribe") return { action: "allow" };
@@ -49,6 +52,11 @@ export function gateDecision(
   if (
     pathname === "/me" ||
     pathname === "/me.html" ||
+    // The read-only history board: the same kind of static shell as /me
+    // (it reads the student's token from this browser and calls the
+    // bearer-only routes above). Rewritten to /me-board.html.
+    pathname === "/me/board" ||
+    pathname === "/me-board.html" ||
     pathname === "/sw.js" ||
     pathname === "/api/vapid-public-key"
   ) {

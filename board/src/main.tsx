@@ -2,6 +2,7 @@ import { StrictMode } from "react";
 import { createRoot } from "react-dom/client";
 import App from "./App";
 import RosterApp from "./RosterApp";
+import StudentHistoryApp from "./StudentHistoryApp";
 import ErrorBoundary from "./components/ErrorBoundary";
 import type { BoardData } from "./lib/types";
 import "./index.css";
@@ -54,6 +55,17 @@ if (rootEl.dataset.aictMode === "roster") {
     <StrictMode>
       <ErrorBoundary>
         <RosterApp />
+      </ErrorBoundary>
+    </StrictMode>,
+  );
+} else if (rootEl.dataset.aictMode === "student-history") {
+  // The student's read-only history board (/me/board on the classroom
+  // server): no embedded payload either — it fetches the student's own
+  // released submission with their token.
+  createRoot(rootEl).render(
+    <StrictMode>
+      <ErrorBoundary>
+        <StudentHistoryApp />
       </ErrorBoundary>
     </StrictMode>,
   );

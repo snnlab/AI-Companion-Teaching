@@ -165,7 +165,8 @@ export function parseExternalAssets(
 }
 
 // Every `aict-asset:<sha>` reference in a payload's asset maps — the
-// manuscript's figure map and each results bundle's artifact map.
+// manuscript's figure map and each results bundle's artifact map — plus a
+// manuscript body sent separately (over 1 MB, submit.py).
 export function collectAssetRefs(payload: Record<string, unknown>): string[] {
   const refs = new Set<string>();
   const scan = (m: unknown) => {
@@ -175,7 +176,10 @@ export function collectAssetRefs(payload: Record<string, unknown>): string[] {
     }
   };
   const files = isRecord(payload.files) ? payload.files : {};
-  if (isRecord(files.manuscript)) scan(files.manuscript.assets);
+  if (isRecord(files.manuscript)) {
+    scan(files.manuscript.assets);
+    scan({ content: files.manuscript.content });
+  }
   for (const g of Array.isArray(files.executionPlans) ? files.executionPlans : []) {
     if (!isRecord(g)) continue;
     for (const b of Array.isArray(g.results) ? g.results : []) {

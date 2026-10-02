@@ -38,6 +38,14 @@ function assetMaps(payload: BoardData): AssetMap[] {
   return maps;
 }
 
+// A manuscript body over 1 MB travels the same way (submit.py): its
+// `content` is then a reference too, fetched back as UTF-8 text.
+function manuscriptContentRef(payload: BoardData): string | null {
+  const m = (payload as unknown as { files?: { manuscript?: { content?: unknown } } }).files?.manuscript;
+  const c = m?.content;
+  return typeof c === "string" && c.startsWith(ASSET_REF_PREFIX) ? c.slice(ASSET_REF_PREFIX.length) : null;
+}
+
 export function assetRefs(payload: BoardData): string[] {
   const refs = new Set<string>();
   for (const map of assetMaps(payload)) {
@@ -80,8 +88,19 @@ export async function hydrateExternalAssets(
   fetchPart: FetchPart,
 ): Promise<BoardData> {
   const refs = assetRefs(payload);
-  if (refs.length === 0) return payload;
+  const contentSha = manuscriptContentRef(payload);
+  if (refs.length === 0 && !contentSha) return payload;
   const metaAll = (payload as unknown as { externalAssets?: Record<string, ExternalAssetMeta> }).externalAssets ?? {};
+  let contentText: string | null = null;
+  if (contentSha) {
+    try {
+      const parts = metaAll[contentSha]?.parts ?? 1;
+      const bufs = await Promise.all(Array.from({ length: parts }, (_, i) => fetchPart(contentSha, i)));
+      contentText = await new Blob(bufs).text();
+    } catch {
+      contentText = null; // shown as an unreadable manuscript, never a crash
+    }
+  }
   const resolved = new Map<string, string>();
   await Promise.all(
     refs.map(async (sha) => {
@@ -93,6 +112,15 @@ export async function hydrateExternalAssets(
     }),
   );
   const copy = structuredClone(payload);
+  if (contentSha) {
+    const m = (copy as unknown as { files: { manuscript: { content: string; format: string; note?: string } } }).files.manuscript;
+    if (contentText !== null) m.content = contentText;
+    else {
+      m.content = "";
+      m.format = "unsupported";
+      m.note = "The manuscript text could not be downloaded from the classroom server. Reload to try again.";
+    }
+  }
   for (const map of assetMaps(copy)) {
     for (const [k, v] of Object.entries(map)) {
       if (typeof v !== "string" || !v.startsWith(ASSET_REF_PREFIX)) continue;

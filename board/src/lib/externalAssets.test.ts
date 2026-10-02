@@ -52,3 +52,28 @@ describe("externalAssets", () => {
     expect((out as unknown as { files: any }).files.manuscript.assets["fig.png"]).toBe(`aict-asset:${SHA_A}`);
   });
 });
+
+describe("hydrateExternalAssets (manuscript body sent separately)", () => {
+  it("fetches a referenced manuscript body back as UTF-8 text", async () => {
+    const text = "<p>긴 원고</p>";
+    const bytes = new TextEncoder().encode(text);
+    const p = {
+      mode: "submission",
+      files: { manuscript: { path: "plans/manuscript.docx", format: "docx-html", content: `aict-asset:${SHA_A}` }, executionPlans: [] },
+      externalAssets: { [SHA_A]: { mime: "text/html; charset=utf-8", size: bytes.length, parts: 1 } },
+    } as unknown as BoardData;
+    const out = await hydrateExternalAssets(p, "s1", vi.fn(async () => bytes.buffer as ArrayBuffer));
+    expect(out.files.manuscript?.content).toBe(text);
+    expect(out.files.manuscript?.format).toBe("docx-html");
+  });
+
+  it("degrades to an unreadable-manuscript note when the body cannot be fetched", async () => {
+    const p = {
+      mode: "submission",
+      files: { manuscript: { path: "plans/manuscript.docx", format: "docx-html", content: `aict-asset:${SHA_A}` }, executionPlans: [] },
+    } as unknown as BoardData;
+    const out = await hydrateExternalAssets(p, "s2", vi.fn(async () => { throw new Error("down"); }));
+    expect(out.files.manuscript?.format).toBe("unsupported");
+    expect(out.files.manuscript?.content).toBe("");
+  });
+});

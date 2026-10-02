@@ -43,9 +43,11 @@ from board import (  # noqa: E402
 import classroom  # noqa: E402
 
 ENVELOPE_SCHEMA_VERSION = 1
-# Vercel's serverless function request body limit — a soft warning only; the
-# server's own 413 is the authoritative check.
-SIZE_WARNING_BYTES = int(4.5 * 1024 * 1024)
+# Vercel's serverless function request body limit is 4.5 MB (4,500,000
+# bytes, not MiB): a bigger body never reaches the server's own 413 — Vercel
+# answers first with an HTML error. So the client stops BEFORE sending, with
+# 100 KB of headroom, and says what is too big.
+ENVELOPE_HARD_CAP = 4_400_000
 
 # Files sent outside the envelope (manuscript figures, results artifacts):
 # uploaded to /api/assets in parts no larger than this, then referenced from
@@ -58,6 +60,9 @@ EXTERNALIZE_MIN_BYTES = 32 * 1024
 # ...and smaller files follow, largest first, until the envelope fits here
 # (headroom under the 4.5 MB cap for the JSON itself).
 ENVELOPE_TARGET_BYTES = int(3.5 * 1024 * 1024)
+# A manuscript body over this (a long thesis converted from Word) is sent
+# separately too, so the envelope stays plans + metadata.
+MANUSCRIPT_EXTERNALIZE_BYTES = 1024 * 1024
 
 
 def die(msg, code=1):
@@ -242,8 +247,16 @@ def _decode_data_uri(uri):
         return None
 
 
+def envelope_body(envelope):
+    """The exact bytes POSTed. UTF-8 with non-ASCII kept as-is: the default
+    ensure_ascii=True would send every Hangul character as a 6-byte \\uXXXX
+    escape — twice its UTF-8 size — so a Korean manuscript would weigh up to
+    double what was measured."""
+    return json.dumps(envelope, ensure_ascii=False).encode("utf-8")
+
+
 def _envelope_bytes(envelope):
-    return len(json.dumps(envelope, ensure_ascii=False).encode("utf-8"))
+    return len(envelope_body(envelope))
 
 
 def externalize_assets(envelope):
@@ -283,6 +296,13 @@ def externalize_assets(envelope):
             move(entry)
         else:
             rest.append(entry)
+    # A very long manuscript body goes out the same way; the board fetches
+    # it back by the same reference (externalAssets.ts / check.py).
+    manuscript = payload["files"].get("manuscript")
+    body = manuscript.get("content") if isinstance(manuscript, dict) else None
+    if isinstance(body, str) and len(body.encode("utf-8")) > MANUSCRIPT_EXTERNALIZE_BYTES:
+        mime = "text/html" if manuscript.get("format") == "docx-html" else "text/markdown"
+        move((manuscript, "content", mime + "; charset=utf-8", body.encode("utf-8")))
     if meta:
         payload["externalAssets"] = meta
     for entry in rest:  # largest first
@@ -293,13 +313,44 @@ def externalize_assets(envelope):
     return uploads
 
 
+def _largest_parts(envelope, n=3):
+    """The n biggest pieces of an envelope, as (label, bytes)."""
+    size = lambda v: len(json.dumps(v, ensure_ascii=False).encode("utf-8"))
+    files = envelope["payload"]["files"]
+    parts = []
+    m = files.get("manuscript")
+    if isinstance(m, dict):
+        parts.append(("manuscript text (%s)" % m.get("path", "manuscript"), size(m.get("content", ""))))
+    for key in ("masterPlan", "decisionLog"):
+        if isinstance(files.get(key), dict):
+            parts.append((files[key].get("path", key), size(files[key])))
+    for g in files.get("executionPlans", []):
+        for v in g.get("versions", []):
+            parts.append((v.get("path", g.get("component", "plan")), size(v)))
+        for b in g.get("results", []):
+            parts.append(("results %s r%s" % (g.get("component"), b.get("resultsVersion")), size(b)))
+    parts.append(("git history excerpt", size(envelope.get("gitExcerpt"))))
+    return sorted(parts, key=lambda p: p[1], reverse=True)[:n]
+
+
+def oversize_message(envelope):
+    total = _envelope_bytes(envelope)
+    biggest = ", ".join("%s %.1f MB" % (label, b / 1e6) for label, b in _largest_parts(envelope))
+    return (
+        "the submission is %.2f MB even with its figures and files sent separately — "
+        "over the %.1f MB a classroom server accepts. Largest parts: %s. Split the "
+        "manuscript or move long appendix tables into a separate file, then resubmit."
+        % (total / 1e6, ENVELOPE_HARD_CAP / 1e6, biggest)
+    )
+
+
 def envelope_summary(envelope):
     payload = envelope["payload"]
     groups = payload["files"]["executionPlans"]
     n_components = len(groups)
     n_versions = sum(len(g.get("versions", [])) for g in groups)
     n_results = sum(len(g.get("results", [])) for g in groups)
-    size_bytes = len(json.dumps(envelope, ensure_ascii=False).encode("utf-8"))
+    size_bytes = _envelope_bytes(envelope)
     git = envelope["gitExcerpt"]
     commits = git.get("commits", [])
     date_range = None
@@ -343,14 +394,8 @@ def print_dry_run(envelope, warnings, uploads=None):
         print("  git excerpt (plans/): unavailable (not a git repo, or git missing)")
     print("  idempotency key: %s" % envelope["idempotencyKey"])
     print("  course id: %s" % (envelope["courseId"] or "(not configured)"))
-    if summary["sizeBytes"] > SIZE_WARNING_BYTES:
-        print(
-            "  WARNING: even with its files sent separately, the envelope "
-            "exceeds ~4.5MB (Vercel's request body limit) — the plan and "
-            "log text itself is too large and the submission will be "
-            "rejected with HTTP 413.",
-            file=sys.stderr,
-        )
+    if summary["sizeBytes"] > ENVELOPE_HARD_CAP:
+        print("  WARNING: " + oversize_message(envelope), file=sys.stderr)
     if warnings:
         print("  pre-flight warnings:")
         for w in warnings:
@@ -440,7 +485,7 @@ def upload_assets(url, token, envelope, uploads):
 
 def submit_envelope(url, token, envelope):
     endpoint = url.rstrip("/") + "/api/submissions"
-    body = json.dumps(envelope).encode("utf-8")
+    body = envelope_body(envelope)
     req = urllib.request.Request(
         endpoint,
         data=body,
@@ -571,17 +616,20 @@ def main():
     inline_envelope = build_envelope(root, course_id, payload=payload)
     envelope = copy.deepcopy(inline_envelope)
     uploads = externalize_assets(envelope)
+    # Stop before uploading anything: a body over the cap would only fail
+    # at Vercel's edge after every figure went up.
+    if _envelope_bytes(envelope) > ENVELOPE_HARD_CAP:
+        die(oversize_message(envelope))
     try:
         upload_assets(url, token, envelope, uploads)
     except AssetsUnsupported:
         # An older classroom server: everything inline, as before.
         envelope = inline_envelope
-        if _envelope_bytes(envelope) > SIZE_WARNING_BYTES:
-            print(
-                "submit: this classroom server does not accept separately "
-                "uploaded files yet, and the submission is over its 4.5MB "
-                "limit — ask your instructor to update the server.",
-                file=sys.stderr,
+        if _envelope_bytes(envelope) > ENVELOPE_HARD_CAP:
+            die(
+                "this classroom server does not accept separately uploaded "
+                "files yet, and the submission is over its 4.5 MB limit — "
+                "ask your instructor to update the server."
             )
     submit_envelope(url, token, envelope)
 

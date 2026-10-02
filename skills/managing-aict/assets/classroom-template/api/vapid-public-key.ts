@@ -2,7 +2,7 @@
 // pushManager.subscribe() call. Public by definition (it is the "application
 // server key" browsers embed in the subscription); no auth, and no secret
 // here. Returns { key: null } when web push is not configured on this
-// deployment so the page can hide its "알림 받기" button.
+// deployment so the page can hide its "Notify me" button.
 import type { VercelRequest, VercelResponse } from "@vercel/node";
 import { SECURITY_HEADERS } from "../lib/gate.js";
 

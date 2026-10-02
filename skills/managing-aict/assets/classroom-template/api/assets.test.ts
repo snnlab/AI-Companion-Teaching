@@ -89,7 +89,22 @@ describe("POST /api/assets?op=check", () => {
 });
 
 describe("GET /api/assets", () => {
-  it("is instructor-only and returns the stored part's bytes", async () => {
+  it("lets a student read back only their OWN files with their token", async () => {
+    const mine = Buffer.from("my-figure");
+    const theirs = Buffer.from("bob-figure");
+    store.set(`assets/alice/${sha(mine)}/0`, mine);
+    store.set(`assets/bob/${sha(theirs)}/0`, theirs);
+    const r = await run("GET", BEARER, { sha: sha(mine), part: "0" }, Buffer.alloc(0), ENV, NOW);
+    expect(r.status).toBe(200);
+    expect(r.bytes?.toString()).toBe("my-figure");
+    // naming another student does not reach their files: the token's owner wins
+    const other = await run("GET", BEARER, { student: "bob", sha: sha(theirs), part: "0" }, Buffer.alloc(0), ENV, NOW);
+    expect(other.status).toBe(404);
+    get.mockImplementation(async () => null); // unknown token
+    expect((await run("GET", BEARER, { sha: sha(mine), part: "0" }, Buffer.alloc(0), ENV, NOW)).status).toBe(401);
+  });
+
+  it("serves the instructor any student's file", async () => {
     const b = Buffer.from("figure");
     store.set(`assets/alice/${sha(b)}/0`, b);
     const q = { student: "alice", sha: sha(b), part: "0" };

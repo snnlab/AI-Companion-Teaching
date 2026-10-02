@@ -5,12 +5,13 @@ function streamOf(obj: unknown): ReadableStream<Uint8Array> {
   return new ReadableStream({ start(c) { c.enqueue(bytes); c.close(); } });
 }
 
-const { put, get, list } = vi.hoisted(() => ({
+const { put, get, list, del } = vi.hoisted(() => ({
   put: vi.fn(async (_pathname: string, _body: string, _options?: Record<string, unknown>) => ({})),
   get: vi.fn(),
   list: vi.fn(),
+  del: vi.fn(async (_pathname: string, _options?: Record<string, unknown>) => undefined),
 }));
-vi.mock("@vercel/blob", () => ({ put, get, list }));
+vi.mock("@vercel/blob", () => ({ put, get, list, del }));
 
 import { run } from "./comments";
 import { signCookie } from "../lib/auth";
@@ -91,6 +92,31 @@ describe("GET /api/comments", () => {
     expect(r.status).toBe(200);
   });
 
+  it("shows a student nothing on their own submission until the instructor releases it", async () => {
+    mockOwnedShareHash("alice");
+    const owned = get.getMockImplementation()!;
+    let released = false;
+    get.mockImplementation(async (pathname: string) => {
+      if (pathname === `release/${SHARE_HASH}.json`) {
+        return released ? { statusCode: 200, stream: streamOf({ releasedAt: "2026-10-01T00:00:00.000Z", by: "K" }) } : null;
+      }
+      if (pathname === `comments/${SHARE_HASH}/c1.json`) {
+        return { statusCode: 200, stream: streamOf({ id: "c1", annotation: { type: "general", comment: "wip" } }) };
+      }
+      return owned(pathname);
+    });
+    list.mockResolvedValue({ blobs: [{ pathname: `comments/${SHARE_HASH}/c1.json` }], hasMore: false });
+    const before = await run("GET", studentHeaders(), { shareHash: SHARE_HASH }, undefined, ENV, NOW);
+    expect(before).toEqual({ status: 200, json: { comments: [] } });
+    released = true;
+    const after = await run("GET", studentHeaders(), { shareHash: SHARE_HASH }, undefined, ENV, NOW);
+    expect((after.json as { comments: { id: string }[] }).comments.map((c) => c.id)).toEqual(["c1"]);
+    // the instructor always sees work in progress
+    released = false;
+    const inst = await run("GET", instructorHeaders(), { shareHash: SHARE_HASH }, undefined, ENV, NOW);
+    expect((inst.json as { comments: unknown[] }).comments).toHaveLength(1);
+  });
+
   it("refuses a student reading comments on a shareHash that resolves to a DIFFERENT student", async () => {
     mockOwnedShareHash("bob"); // the shareHash belongs to bob, not alice (the bearer token's owner)
     const r = await run("GET", studentHeaders(), { shareHash: SHARE_HASH }, undefined, ENV, NOW);
@@ -142,7 +168,69 @@ describe("POST /api/comments", () => {
   });
 
   it("rejects an unsupported method with 405", async () => {
-    const r = await run("DELETE", instructorHeaders(), {}, undefined, ENV, NOW);
+    const r = await run("PUT", instructorHeaders(), {}, undefined, ENV, NOW);
     expect(r.status).toBe(405);
+  });
+});
+
+describe("PATCH / DELETE /api/comments (instructor edits)", () => {
+  const ID = "11111111-1111-4111-8111-111111111111";
+  const STORED = {
+    id: ID, clientId: "client-1", author: "Prof. Kim", shareHash: SHARE_HASH, docHash: null,
+    annotation: { type: "doc-comment", view: "manuscript", quote: "q", comment: "old", category: "integrity" },
+    receivedAt: "2026-10-01T00:00:00.000Z",
+  };
+  const query = { shareHash: SHARE_HASH, id: ID };
+
+  beforeEach(() => {
+    put.mockClear();
+    del.mockClear();
+    get.mockReset();
+    get.mockImplementation(async (pathname: string) =>
+      pathname === `comments/${SHARE_HASH}/${ID}.json` ? { statusCode: 200, stream: streamOf(STORED) } : null,
+    );
+  });
+
+  it("rejects a student token and an anonymous caller", async () => {
+    for (const h of [studentHeaders(), {}]) {
+      for (const m of ["PATCH", "DELETE"]) {
+        const r = await run(m, h, query, { comment: "x" }, ENV, NOW);
+        expect(r.status).toBe(401);
+      }
+    }
+    expect(put).not.toHaveBeenCalled();
+    expect(del).not.toHaveBeenCalled();
+  });
+
+  it("PATCH rewrites only the text (and flag), stamps editedAt, keeps the anchor", async () => {
+    const r = await run("PATCH", instructorHeaders(), query, { comment: "  new text  ", category: null }, ENV, NOW);
+    expect(r.status).toBe(200);
+    const [pathname, body, opts] = put.mock.calls[0];
+    expect(pathname).toBe(`comments/${SHARE_HASH}/${ID}.json`);
+    expect(opts).toMatchObject({ allowOverwrite: true });
+    const saved = JSON.parse(body);
+    expect(saved.annotation).toEqual({ type: "doc-comment", view: "manuscript", quote: "q", comment: "new text" });
+    expect(saved.receivedAt).toBe(STORED.receivedAt);
+    expect(saved.editedAt).toBe(new Date(NOW * 1000).toISOString());
+    expect(saved.id).toBe(ID);
+  });
+
+  it("PATCH on a missing comment is 404; an empty or oversized text is 400", async () => {
+    get.mockImplementation(async () => null);
+    expect((await run("PATCH", instructorHeaders(), query, { comment: "x" }, ENV, NOW)).status).toBe(404);
+    expect((await run("PATCH", instructorHeaders(), query, { comment: "  " }, ENV, NOW)).status).toBe(400);
+    expect((await run("PATCH", instructorHeaders(), query, { comment: "x".repeat(4001) }, ENV, NOW)).status).toBe(400);
+    expect((await run("PATCH", instructorHeaders(), query, { comment: "x", category: "spam" }, ENV, NOW)).status).toBe(400);
+    expect(put).not.toHaveBeenCalled();
+  });
+
+  it("DELETE removes the blob; a bad id never reaches storage", async () => {
+    const r = await run("DELETE", instructorHeaders(), query, undefined, ENV, NOW);
+    expect(r.status).toBe(200);
+    expect(del).toHaveBeenCalledWith(`comments/${SHARE_HASH}/${ID}.json`, { token: "blob-tok" });
+    del.mockClear();
+    const bad = await run("DELETE", instructorHeaders(), { shareHash: SHARE_HASH, id: "../roster/alice" }, undefined, ENV, NOW);
+    expect(bad.status).toBe(400);
+    expect(del).not.toHaveBeenCalled();
   });
 });

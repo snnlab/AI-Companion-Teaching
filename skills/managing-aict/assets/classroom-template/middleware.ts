@@ -83,6 +83,8 @@ function isStudentPageRoute(pathname: string): boolean {
   return (
     pathname === "/me" ||
     pathname === "/me.html" ||
+    pathname === "/me/board" ||
+    pathname === "/me-board.html" ||
     pathname === "/sw.js" ||
     pathname === "/api/vapid-public-key"
   );
@@ -109,6 +111,7 @@ function isBearerTokenRoute(pathname: string): boolean {
     pathname === "/api/submissions" ||
     pathname === "/api/comments" ||
     pathname === "/api/my-comments" ||
+    pathname === "/api/my-submission" ||
     pathname === "/api/push-subscribe" ||
     // POST is the student's bearer upload; GET is instructor-only and
     // api/assets.ts checks the session cookie itself.

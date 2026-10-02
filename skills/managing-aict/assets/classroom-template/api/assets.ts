@@ -3,7 +3,8 @@
 //
 //   POST ?op=check                       bearer   {assets:[{sha,parts}]} -> {missing:[sha]}
 //   POST ?op=put&sha=&part=&parts=[&partSha=]   bearer   raw bytes of one part
-//   GET  ?student=&sha=&part=             instructor session   raw bytes of one part
+//   GET  ?student=&sha=&part=             instructor session,  raw bytes of one part
+//                                         or the uploading student's own token
 //
 // Every request and response stays under the 4.5 MB Vercel Function body cap
 // by construction: a part is at most ASSET_PART_BYTES (4 MB).
@@ -61,10 +62,16 @@ export async function run(
   const blobToken = env.BLOB_READ_WRITE_TOKEN as string;
 
   if (method === "GET") {
+    let studentId = q(query, "student");
     if (!isAuthed({ BOARD_SESSION_SECRET: env.BOARD_SESSION_SECRET }, headers, now)) {
-      return { status: 401, json: { error: "unauthorized" } };
+      // A student may read back their OWN files (the history board): files
+      // are stored per uploader, so the token's owner is the only student id
+      // a bearer caller ever reaches — the query's `student` is ignored.
+      const token = bearerToken(headers);
+      const owner = token ? await resolveToken(blobToken, env.ROSTER_TOKEN_PEPPER ?? "", token) : null;
+      if (!owner) return { status: 401, json: { error: "unauthorized" } };
+      studentId = owner;
     }
-    const studentId = q(query, "student");
     const sha = q(query, "sha");
     const part = intParam(query, "part");
     if (!studentId || !STUDENT_ID_RE.test(studentId) || !sha || !SHA256_RE.test(sha) || part === null) {

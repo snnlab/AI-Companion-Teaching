@@ -1,10 +1,10 @@
 <!doctype html>
-<html lang="ko">
+<html lang="en">
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <meta name="robots" content="noindex">
-<title>내 피드백</title>
+<title>My feedback</title>
 <style>
   :root { color-scheme: light; }
   * { box-sizing: border-box; }
@@ -21,6 +21,11 @@
   }
   .sub-head { display: flex; flex-wrap: wrap; align-items: baseline; gap: .5rem; margin-bottom: .5rem; }
   .sub-head strong { font-size: .98rem; }
+  .sub-head a.open {
+    margin-left: auto; font-size: .82rem; font-weight: 600; color: #2563eb;
+    text-decoration: none; border: 1px solid #bfdbfe; border-radius: 8px; padding: .25rem .6rem;
+  }
+  .sub-head a.open:hover { background: #eff6ff; }
   .badge {
     display: inline-block; font-size: .72rem; font-weight: 700; letter-spacing: .02em;
     padding: .12rem .5rem; border-radius: 999px; background: #dbeafe; color: #1d4ed8;
@@ -64,7 +69,7 @@
 </style>
 </head>
 <body>
-<main id="app"><p class="muted">불러오는 중…</p></main>
+<main id="app"><p class="muted">Loading…</p></main>
 <div id="pushbar"></div>
 
 <script>
@@ -125,16 +130,16 @@
 
   function showTokenForm(message) {
     clear();
-    app.appendChild(el("h1", { text: "내 피드백" }));
+    app.appendChild(el("h1", { text: "My feedback" }));
     app.appendChild(el("p", { class: "muted", text:
-      "교수자가 남긴 피드백을 확인하는 페이지입니다. 아무것도 설치할 필요 없이, 제출에 쓰는 토큰만 있으면 됩니다." }));
+      "Read the feedback your instructor left on your submissions. Nothing to install — you only need the token you use to submit." }));
     var form = el("form");
-    form.appendChild(el("label", { for: "tok", text: "제출 토큰 (교수자에게 받은, /ait:submit 에 쓰는 그 토큰)" }));
+    form.appendChild(el("label", { for: "tok", text: "Submission token (the one your instructor gave you for /ait:submit)" }));
     var input = el("input", { type: "text", id: "tok", autocomplete: "off",
-      autocapitalize: "off", spellcheck: "false", placeholder: "예: 3f9a…" });
+      autocapitalize: "off", spellcheck: "false", placeholder: "e.g. 3f9a…" });
     form.appendChild(input);
     if (message) form.appendChild(el("p", { class: "err", text: message }));
-    var btn = el("button", { type: "submit", text: "확인" });
+    var btn = el("button", { type: "submit", text: "Continue" });
     form.appendChild(el("div", { class: "row" }, [btn]));
     form.addEventListener("submit", function (e) {
       e.preventDefault();
@@ -149,11 +154,11 @@
 
   function renderEmpty(studentId) {
     clear();
-    app.appendChild(el("h1", { text: "내 피드백" }));
-    if (studentId) app.appendChild(el("p", { class: "muted", text: studentId + " 님" }));
+    app.appendChild(el("h1", { text: "My feedback" }));
+    if (studentId) app.appendChild(el("p", { class: "muted", text: studentId }));
     var box = el("div", { class: "card empty" }, [
-      el("p", { text: "아직 도착한 피드백이 없습니다." }),
-      el("p", { class: "muted", text: "교수자가 검토를 마치고 보내면 여기에 표시됩니다." }),
+      el("p", { text: "No feedback yet." }),
+      el("p", { class: "muted", text: "It appears here once your instructor finishes reviewing and sends it." }),
     ]);
     app.appendChild(box);
     app.appendChild(controls());
@@ -161,9 +166,9 @@
   }
 
   function controls() {
-    var refresh = el("button", { type: "button", text: "새로고침" });
+    var refresh = el("button", { type: "button", text: "Refresh" });
     refresh.addEventListener("click", load);
-    var change = el("button", { type: "button", class: "ghost", text: "토큰 변경" });
+    var change = el("button", { type: "button", class: "ghost", text: "Change token" });
     change.addEventListener("click", function () { ls("del", TOKEN_KEY); showTokenForm(); });
     return el("div", { class: "row" }, [refresh, change]);
   }
@@ -204,7 +209,7 @@
     var existing = await reg.pushManager.getSubscription();
 
     if (existing && Notification.permission === "granted") {
-      var offBtn = el("button", { type: "button", class: "off", text: "알림 끄기" });
+      var offBtn = el("button", { type: "button", class: "off", text: "Turn off notifications" });
       offBtn.addEventListener("click", async function () {
         offBtn.disabled = true;
         try {
@@ -217,27 +222,27 @@
         } catch (e) { /* ignore */ }
         initPush();
       });
-      setBar([el("span", { class: "grow", text: "새 피드백 알림이 켜져 있습니다. 이 페이지를 닫아도 알림이 옵니다." }), offBtn], true);
+      setBar([el("span", { class: "grow", text: "New-feedback notifications are on. They arrive even when this page is closed." }), offBtn], true);
       return;
     }
 
-    var onBtn = el("button", { type: "button", text: "🔔 새 피드백 알림 받기" });
-    var note = el("span", { class: "grow", text: "교수자가 피드백을 보내면 이 기기로 알림이 옵니다. (한 번만 허용하면 됩니다)" });
+    var onBtn = el("button", { type: "button", text: "🔔 Notify me of new feedback" });
+    var note = el("span", { class: "grow", text: "Get a notification on this device when your instructor sends feedback. (You only allow it once.)" });
     onBtn.addEventListener("click", async function () {
       onBtn.disabled = true;
       var perm = Notification.permission === "granted" ? "granted" : await Notification.requestPermission();
       if (perm !== "granted") {
-        note.textContent = "브라우저에서 알림이 차단되어 있습니다. 주소창의 자물쇠 아이콘에서 알림을 허용으로 바꿔 주세요.";
+        note.textContent = "Notifications are blocked in this browser. Allow them from the lock icon in the address bar.";
         onBtn.disabled = false;
         return;
       }
       var appKey;
       try {
         appKey = urlB64ToUint8Array(keyRes.key);
-        if (appKey.length !== 65) throw new Error("서버의 VAPID_PUBLIC_KEY 길이가 " + appKey.length + "바이트입니다 (65 필요) — 교수자가 키를 다시 설정하고 재배포해야 합니다.");
+        if (appKey.length !== 65) throw new Error("the server's VAPID_PUBLIC_KEY is " + appKey.length + " bytes (65 needed) — your instructor must reset the key and redeploy.");
       } catch (e) {
         console.error("[push] bad applicationServerKey:", e);
-        note.textContent = "알림 키 설정이 잘못되었습니다: " + (e && e.message ? e.message : e);
+        note.textContent = "The notification key is misconfigured: " + (e && e.message ? e.message : e);
         onBtn.disabled = false;
         return;
       }
@@ -255,11 +260,11 @@
           headers: { Authorization: "Bearer " + token, "content-type": "application/json" },
           body: JSON.stringify(sub.toJSON ? sub.toJSON() : sub),
         });
-        if (!res.ok) throw new Error("서버가 구독을 거부했습니다 (HTTP " + res.status + ")");
+        if (!res.ok) throw new Error("the server refused the subscription (HTTP " + res.status + ")");
       } catch (e) {
         console.error("[push] subscribe failed:", e);
         var name = e && e.name ? e.name + ": " : "";
-        note.textContent = "알림 설정에 실패했습니다 — " + name + (e && e.message ? e.message : "잠시 후 다시 시도해 주세요.");
+        note.textContent = "Couldn’t turn on notifications — " + name + (e && e.message ? e.message : "try again in a moment.");
         onBtn.disabled = false;
         return;
       }
@@ -268,17 +273,22 @@
     setBar([note, onBtn], false);
   }
 
+  var VIEWS = { tracker: "Tracker", timeline: "Timeline", reports: "Reports",
+    reviews: "Reviews", archive: "Archive", plans: "Analysis plans",
+    results: "Output & validation", manuscript: "Manuscript" };
+
   function commentWhere(a) {
-    if (!a || typeof a !== "object") return "일반 코멘트";
+    if (!a || typeof a !== "object") return "General comment";
+    // The manuscript's sectionHeading is the literal "manuscript" — say where
+    // it is instead.
+    if (a.view === "manuscript") return "Manuscript";
     if (a.sectionHeading) return a.sectionHeading;
     if (a.component) {
-      return a.component + (a.version != null ? " · 계획 v" + a.version
-        : a.resultsVersion != null ? " · 결과 r" + a.resultsVersion : "");
+      return a.component + (a.version != null ? " · plan v" + a.version
+        : a.resultsVersion != null ? " · results r" + a.resultsVersion : "");
     }
-    var views = { tracker: "트래커", timeline: "타임라인", reports: "리포트",
-      reviews: "리뷰", archive: "아카이브", plans: "분석 계획", results: "산출물·검증" };
-    if (a.view) return views[a.view] || a.view;
-    return "일반 코멘트";
+    if (a.view) return VIEWS[a.view] || a.view;
+    return "General comment";
   }
 
   function renderComment(c) {
@@ -287,7 +297,8 @@
     node.appendChild(el("div", { class: "where", text: commentWhere(a) }));
     if (a.quote) node.appendChild(el("blockquote", { text: a.quote }));
     node.appendChild(el("div", { class: "body", text: a.comment || "" }));
-    var by = [c.author || "교수자", fmtDate(c.receivedAt)].filter(Boolean).join(" · ");
+    var by = [c.author || "Instructor", fmtDate(c.receivedAt),
+      c.editedAt ? "edited " + fmtDate(c.editedAt) : ""].filter(Boolean).join(" · ");
     node.appendChild(el("div", { class: "by", text: by }));
     return node;
   }
@@ -302,8 +313,8 @@
     if (released.length === 0) { renderEmpty(data.studentId); return; }
 
     clear();
-    app.appendChild(el("h1", { text: "내 피드백" }));
-    app.appendChild(el("p", { class: "muted", text: (data.studentId || "") + " 님" }));
+    app.appendChild(el("h1", { text: "My feedback" }));
+    app.appendChild(el("p", { class: "muted", text: data.studentId || "" }));
 
     var newSeen = {};
     released.forEach(function (s) {
@@ -314,14 +325,19 @@
       newSeen[s.shareHash] = s.releasedAt;
 
       var head = el("div", { class: "sub-head" }, [
-        el("strong", { text: "제출 " + fmtDate(s.submittedAt) }),
-        el("span", { class: "badge done", text: "검토 완료 " + fmtDate(s.releasedAt) }),
+        el("strong", { text: "Submitted " + fmtDate(s.submittedAt) }),
+        el("span", { class: "badge done", text: "Reviewed " + fmtDate(s.releasedAt) }),
       ]);
-      if (isNew) head.appendChild(el("span", { class: "badge", text: "새 피드백" }));
+      if (isNew) head.appendChild(el("span", { class: "badge", text: "New feedback" }));
+      // The read-only board of exactly this submission, comments in place.
+      head.appendChild(el("a", {
+        class: "open", href: "/me/board?key=" + encodeURIComponent(s.shareHash),
+        text: "Open board",
+      }));
 
       var card = el("div", { class: "card" }, [head]);
       if (mine.length === 0) {
-        card.appendChild(el("p", { class: "muted", text: "이 제출에 대한 코멘트가 없습니다." }));
+        card.appendChild(el("p", { class: "muted", text: "No comments on this submission." }));
       } else {
         mine.forEach(function (c) { card.appendChild(renderComment(c)); });
       }
@@ -330,13 +346,13 @@
 
     var hint = el("div", { class: "card" }, [
       el("p", { class: "muted", text:
-        "이 피드백을 Claude 세션으로 가져오려면 프로젝트 디렉터리에서 /ait:check 를 실행하세요. 코멘트가 계획·타임라인 위에 그대로 표시됩니다." }),
+        "Open board shows a submission exactly as your instructor reviewed it, with each comment highlighted in place. To bring the feedback into your Claude session, run /ait:check in your project directory (/ait:check --history lists every reviewed submission)." }),
     ]);
     app.appendChild(hint);
     app.appendChild(controls());
     initPush();
 
-    // Mark everything shown as seen so the "새 피드백" badge clears on the
+    // Mark everything shown as seen so the "New feedback" badge clears on the
     // next visit (until the instructor sends again, which moves releasedAt).
     setTimeout(function () {
       for (var k in newSeen) ls("set", SEEN_PREFIX + k, newSeen[k]);
@@ -347,20 +363,20 @@
     var token = ls("get", TOKEN_KEY);
     if (!token) { setBar(null); showTokenForm(); return; }
     clear();
-    app.appendChild(el("p", { class: "muted", text: "불러오는 중…" }));
+    app.appendChild(el("p", { class: "muted", text: "Loading…" }));
     fetch("/api/my-comments", { headers: { Authorization: "Bearer " + token } })
       .then(function (r) {
-        if (r.status === 401) { ls("del", TOKEN_KEY); showTokenForm("토큰이 올바르지 않거나 만료되었습니다. 교수자에게 새 토큰을 받아 다시 입력하세요."); return null; }
+        if (r.status === 401) { ls("del", TOKEN_KEY); showTokenForm("That token is wrong or has expired. Ask your instructor for a new one and enter it again."); return null; }
         if (!r.ok) throw new Error("HTTP " + r.status);
         return r.json();
       })
       .then(function (data) { if (data) render(data); })
       .catch(function () {
         clear();
-        app.appendChild(el("h1", { text: "내 피드백" }));
+        app.appendChild(el("h1", { text: "My feedback" }));
         app.appendChild(el("div", { class: "card empty" }, [
-          el("p", { text: "서버에 연결하지 못했습니다." }),
-          el("p", { class: "muted", text: "잠시 후 다시 시도해 주세요." }),
+          el("p", { text: "Couldn’t reach the server." }),
+          el("p", { class: "muted", text: "Try again in a moment." }),
         ]));
         app.appendChild(controls());
       });

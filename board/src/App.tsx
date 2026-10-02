@@ -21,13 +21,18 @@ import {
 import {
   applyPostResult,
   buildCommentBody,
+  deleteComment as deleteSentComment,
   getClientId,
   newUuid,
   partitionComments,
+  patchComment,
 } from "./lib/hostedComments";
 import { liveDraftKey, loadDrafts, clearSubmitted } from "./lib/drafts";
 import { autoCloseKey, useAutoClose } from "./lib/autoClose";
 import FeedbackPanel, { type SubmitState } from "./components/FeedbackPanel";
+import CommentBubble, { type BubbleItem, type BubblePosition } from "./components/CommentBubble";
+import { SentIdsContext } from "./lib/sentIds";
+import { fmtDate } from "./lib/fmtDate";
 import { useHeaderOffset, useMediaQuery } from "./lib/layoutHooks";
 import ConnBanner from "./components/ConnBanner";
 import {
@@ -129,7 +134,11 @@ function seedDedupKey(s: SeededAnnotation): string {
   // master/results get scope-prefixed keys that never collide with a plan path.
   if (scope === "plan") return `${s.planPath}|${s.quote}|${s.comment}|${s.author}`;
   const target =
-    scope === "results" ? `${s.component}|r${s.resultsVersion}` : "master";
+    scope === "results"
+      ? `${s.component}|r${s.resultsVersion}`
+      : scope === "manuscript"
+        ? `${s.docKey}|${s.occurrenceIndex ?? 0}`
+        : "master";
   return `${scope}|${target}|${s.quote}|${s.comment}|${s.author}`;
 }
 
@@ -155,6 +164,25 @@ function seedToAnnotation(s: SeededAnnotation): Annotation {
       anchored: false,
       comment: s.comment,
       author: s.author,
+      sourceId: s.commentId,
+    };
+  }
+  if (scope === "manuscript") {
+    return {
+      id: nextId(),
+      type: "doc-comment",
+      view: "manuscript",
+      docKey: s.docKey ?? "",
+      scope: "manuscript",
+      quote: s.quote,
+      prefix: "",
+      suffix: "",
+      sectionHeading: s.sectionHeading,
+      occurrenceIndex: s.occurrenceIndex ?? 0,
+      anchored: false,
+      comment: s.comment,
+      author: s.author,
+      sourceId: s.commentId,
     };
   }
   if (scope === "results") {
@@ -167,6 +195,7 @@ function seedToAnnotation(s: SeededAnnotation): Annotation {
       anchored: false,
       comment: s.comment,
       author: s.author,
+      sourceId: s.commentId,
     };
   }
   return {
@@ -185,6 +214,7 @@ function seedToAnnotation(s: SeededAnnotation): Annotation {
     anchored: false,
     comment: s.comment,
     author: s.author,
+    sourceId: s.commentId,
   };
 }
 
@@ -192,6 +222,8 @@ export default function App({ data }: { data: BoardData }) {
   if (data.sign) return <SignOffView data={data} />;
 
   const hosted = data.mode === "hosted";
+  // A past submission opened read-only with its released instructor comments.
+  const snapshot = data.mode === "snapshot";
   const canAnnotate = data.mode === "live" || data.mode === "remote" || hosted;
   const canPost = data.mode === "live";
   const remote = data.mode === "remote";
@@ -252,10 +284,16 @@ export default function App({ data }: { data: BoardData }) {
     const seeded: Annotation[] = (data.seededAnnotations ?? [])
       .filter((s) => !ingested.has(seedDedupKey(s)))
       .map(seedToAnnotation);
-    return [...base, ...seeded];
+    // An instructor comment edited on the server comes back with the same
+    // server id: the new wording replaces the pending older copy.
+    const replaced = new Set(seeded.map((a) => ("sourceId" in a ? a.sourceId : undefined)).filter(Boolean));
+    const kept = replaced.size
+      ? base.filter((a) => !("sourceId" in a && a.sourceId && replaced.has(a.sourceId)))
+      : base;
+    return [...kept, ...seeded];
   });
   const [drawerOpen, setDrawerOpen] = useState(
-    (data.seededAnnotations?.length ?? 0) > 0,
+    (data.seededAnnotations?.length ?? 0) > 0 || (data.snapshot?.comments.length ?? 0) > 0,
   );
   const [submitState, setSubmitState] = useState<SubmitState>("idle");
   const [postFailure, setPostFailure] = useState<"server-gone" | "generic" | null>(null);
@@ -297,7 +335,9 @@ export default function App({ data }: { data: BoardData }) {
 
   // Hosted-only state: server-known comments (separate population from the
   // local pending `annotations`), a per-visitor clientId, and save feedback.
-  const [serverComments, setServerComments] = useState<StoredComment[]>([]);
+  const [serverComments, setServerComments] = useState<StoredComment[]>(
+    () => data.snapshot?.comments ?? [],
+  );
   const [saveError, setSaveError] = useState<string | null>(null);
   const [savedOnce, setSavedOnce] = useState(false);
   // In-flight guard (mirrors the Publish-to-web button's publishState pattern):
@@ -327,9 +367,23 @@ export default function App({ data }: { data: BoardData }) {
       .catch(() => setServerComments([]));
   }, [hosted, data.shareHash]);
 
-  const { live, stale } = hosted
-    ? partitionComments(serverComments, data)
-    : { live: [] as StoredComment[], stale: [] as StoredComment[] };
+  const { live, stale } = useMemo(
+    () =>
+      hosted || snapshot
+        ? partitionComments(serverComments, data)
+        : { live: [] as StoredComment[], stale: [] as StoredComment[] },
+    [hosted, snapshot, serverComments, data],
+  );
+  // Sent comments stay highlighted in the text: each live server comment
+  // paints under its server id (the annotation's own id is the pre-save local
+  // one). onPaintResult only ever maps over local `annotations`, so these
+  // never touch a pending comment's anchored flag.
+  const sentHighlights = useMemo(
+    // author: the print view and the balloon label sent comments by who wrote them.
+    () => live.map((c) => ({ ...c.annotation, id: c.id, author: c.author }) as Annotation),
+    [live],
+  );
+  const sentIds = useMemo(() => new Set(live.map((c) => c.id)), [live]);
 
   async function saveHosted(a: Annotation) {
     const name = reviewer.trim();
@@ -371,6 +425,32 @@ export default function App({ data }: { data: BoardData }) {
         next.delete(a.id);
         return next;
       });
+    }
+  }
+
+  // Only the classroom roster server (the instructor's drill-in) can change a
+  // sent comment; the single-project web board has no PATCH/DELETE route.
+  const canEditSent = hosted && !!data.rosterDrill;
+  async function editSent(id: string, text: string): Promise<boolean> {
+    const c = serverComments.find((x) => x.id === id);
+    if (!c) return false;
+    try {
+      const updated = await patchComment(c, text);
+      setServerComments((prev) => prev.map((x) => (x.id === id ? { ...x, ...updated } : x)));
+      return true;
+    } catch {
+      return false;
+    }
+  }
+  async function deleteSent(id: string): Promise<boolean> {
+    const c = serverComments.find((x) => x.id === id);
+    if (!c) return true;
+    try {
+      await deleteSentComment(c);
+      setServerComments((prev) => prev.filter((x) => x.id !== id));
+      return true;
+    } catch {
+      return false;
     }
   }
 
@@ -514,6 +594,12 @@ export default function App({ data }: { data: BoardData }) {
       });
     },
     [],
+  );
+
+  // What the views paint: pending comments plus the sent ones (hosted).
+  const highlightAnnotations = useMemo(
+    () => (sentHighlights.length ? [...annotations, ...sentHighlights] : annotations),
+    [annotations, sentHighlights],
   );
 
   const feedbackMarkdown = useMemo(
@@ -918,12 +1004,17 @@ export default function App({ data }: { data: BoardData }) {
       el.classList.add("annot-flash");
     }
   };
-  const scrollToSelector = (selector: string, tries = 15) => {
+  const scrollToSelector = (
+    selector: string,
+    tries = 15,
+    onFound?: (el: HTMLElement) => void,
+  ) => {
     const attempt = (left: number) => {
       const els = Array.from(document.querySelectorAll(selector));
       if (els.length > 0) {
         (els[0] as HTMLElement).scrollIntoView({ block: "center" });
         flash(els);
+        onFound?.(els[0] as HTMLElement);
         return;
       }
       if (left > 0) setTimeout(() => attempt(left - 1), 100);
@@ -945,27 +1036,57 @@ export default function App({ data }: { data: BoardData }) {
       showSyncNotice("No highlight in this document — opened its view instead.");
       return;
     }
-    scrollToSelector(`mark[data-annotation="${a.id}"], [data-annotation="${a.id}"]`);
+    scrollToSelector(
+      `mark[data-annotation="${a.id}"], [data-annotation="${a.id}"]`,
+      15,
+      (el) => openBubbleAt(el),
+    );
   };
   const openReport = (slug: string, resultsVersion: number) =>
     applyRoute({ tab: "reports", component: slug, resultsVersion, annotationId: "", anchored: false });
-  const openCard = (id: string) => {
-    setDrawerOpen(true);
-    scrollToSelector(`[data-card-id="${id}"]`);
+  // Word-style balloon: the comment(s) under a clicked highlight, shown next
+  // to the text. ids covers nested marks (two comments on overlapping text).
+  const [bubble, setBubble] = useState<{ ids: string[]; pos: BubblePosition } | null>(null);
+  const closeBubble = useCallback(() => setBubble(null), []);
+  const openBubbleAt = (el: HTMLElement) => {
+    const ids: string[] = [];
+    let cur: Element | null = el.closest("[data-annotation]");
+    while (cur) {
+      const id = cur.getAttribute("data-annotation");
+      if (id && !ids.includes(id)) ids.push(id);
+      cur = cur.parentElement?.closest("[data-annotation]") ?? null;
+    }
+    if (ids.length === 0) return;
+    const r = el.getBoundingClientRect();
+    setBubble({
+      ids,
+      pos: { left: r.left + window.scrollX, top: r.top + window.scrollY, bottom: r.bottom + window.scrollY },
+    });
+    // Keep the panel in step when it is already docked open; never pop the
+    // drawer over the text on narrow screens — the balloon is the answer.
+    if (panelOpenRef.current && isDesktopRef.current) {
+      scrollToSelector(ids.map((id) => `[data-card-id="${id}"]`).join(", "));
+    }
   };
-  // Highlight -> card: one document-level delegated listener covers every
+  const openBubbleRef = useRef(openBubbleAt);
+  openBubbleRef.current = openBubbleAt;
+  // Highlight -> balloon: one document-level delegated listener covers every
   // view's marks (and ScriptViewer's line rows) without prop drilling.
   useEffect(() => {
     const resolve = (t: EventTarget | null) =>
-      (t as HTMLElement | null)?.closest?.("[data-annotation]");
+      (t as HTMLElement | null)?.closest?.("[data-annotation]") as HTMLElement | null;
     const onClick = (e: MouseEvent) => {
       const mark = resolve(e.target);
-      if (mark) openCard(mark.getAttribute("data-annotation") as string);
+      if (!mark) return;
+      // A drag-select that ends on a highlight is a new comment, not a click.
+      const sel = window.getSelection();
+      if (sel && !sel.isCollapsed) return;
+      openBubbleRef.current(mark);
     };
     const onKey = (e: KeyboardEvent) => {
       if (e.key !== "Enter") return;
       const mark = resolve(e.target);
-      if (mark) openCard(mark.getAttribute("data-annotation") as string);
+      if (mark) openBubbleRef.current(mark);
     };
     document.addEventListener("click", onClick);
     document.addEventListener("keydown", onKey);
@@ -980,7 +1101,33 @@ export default function App({ data }: { data: BoardData }) {
   const headerOffset = useHeaderOffset(headerRef);
   const isDesktop = useMediaQuery("(min-width: 1024px)");
   const isCoarse = useMediaQuery("(pointer: coarse)");
-  const panelOpen = canAnnotate && drawerOpen;
+  const panelOpen = (canAnnotate || snapshot) && drawerOpen;
+  const panelOpenRef = useRef(panelOpen);
+  panelOpenRef.current = panelOpen;
+  const isDesktopRef = useRef(isDesktop);
+  isDesktopRef.current = isDesktop;
+  const bubbleItems: BubbleItem[] = (bubble?.ids ?? []).flatMap((id): BubbleItem[] => {
+    const pending = annotations.find((a) => a.id === id);
+    if (pending) {
+      return [{
+        id, a: pending, sent: false, editable: canAnnotate,
+        author: hosted ? reviewer.trim() || undefined : pending.author,
+      }];
+    }
+    const c = live.find((x) => x.id === id);
+    return c
+      ? [{
+          id, a: c.annotation, sent: true, editable: canEditSent,
+          author: c.author, at: c.receivedAt || undefined, editedAt: c.editedAt,
+        }]
+      : [];
+  });
+  // Every comment under the open balloon is gone (deleted, or its doc
+  // changed): drop the balloon state too, not just its rendering.
+  const bubbleEmpty = bubble !== null && bubbleItems.length === 0;
+  useEffect(() => {
+    if (bubbleEmpty) setBubble(null);
+  }, [bubbleEmpty]);
   const panelProps = {
     annotations,
     serverLive: live,
@@ -994,11 +1141,15 @@ export default function App({ data }: { data: BoardData }) {
     onRemove: removeAnnotation,
     onEdit: editAnnotation,
     onSaveHosted: saveHosted,
+    canEditSent,
+    onEditSent: editSent,
+    onDeleteSent: deleteSent,
     onClose: () => setDrawerOpen(false),
     onSubmit: submit,
     onDownload: download,
     onCopyFallback: copyFallback,
     onCardClick: openAnnotation,
+    readOnly: snapshot,
   };
 
 
@@ -1024,7 +1175,38 @@ export default function App({ data }: { data: BoardData }) {
   }
 
   return (
+    <SentIdsContext.Provider value={sentIds}>
     <div className="min-h-screen bg-stone-50 dark:bg-stone-950">
+      {bubble && (
+        // The paint pass re-creates <mark>s on every render, so "which
+        // highlight is open" lives in a rule keyed by id, not a class on a node.
+        // Ids are uuids or `ann-…` — filtered to that alphabet, so no escaping.
+        <style>{bubble.ids
+          .filter((id) => /^[\w-]+$/.test(id))
+          .map((id) => `mark[data-annotation="${id}"]`)
+          .join(",")}{"{outline:2px solid var(--color-amber-500);outline-offset:1px}"}</style>
+      )}
+      {bubble && bubbleItems.length > 0 && (
+        <CommentBubble
+          items={bubbleItems}
+          pos={bubble.pos}
+          hosted={hosted}
+          reviewerReady={!!reviewer.trim()}
+          savingIds={savingIds}
+          onEdit={async (item, text) => {
+            if (item.sent) return editSent(item.id, text);
+            editAnnotation(item.id, text);
+            return true;
+          }}
+          onRemove={async (item) => {
+            if (item.sent) return deleteSent(item.id);
+            removeAnnotation(item.id);
+            return true;
+          }}
+          onSaveDraft={(a) => void saveHosted(a)}
+          onClose={closeBubble}
+        />
+      )}
       {copyFallbackState && (
         <div
           role="dialog"
@@ -1149,12 +1331,12 @@ export default function App({ data }: { data: BoardData }) {
                   Run /ait:board --publish-web in Claude Code
                 </span>
               ))}
-            {canAnnotate && (
+            {(canAnnotate || snapshot) && (
               <button
                 className="rounded-md border border-stone-300 dark:border-stone-600 px-3 py-1.5 text-sm font-medium text-stone-700 dark:text-stone-300 hover:border-stone-500 dark:hover:border-stone-400"
                 onClick={() => setDrawerOpen((o) => !o)}
               >
-                Feedback ({annotations.length})
+                {snapshot ? `Comments (${live.length})` : `Feedback (${annotations.length})`}
               </button>
             )}
           </div>
@@ -1166,6 +1348,13 @@ export default function App({ data }: { data: BoardData }) {
               ? ` at commit ${data.git.head}`
               : ""}{" "}
             — regenerate with /ait:board --export
+          </div>
+        )}
+        {snapshot && data.snapshot && (
+          <div className="border-t border-blue-200 dark:border-blue-900 bg-blue-50 dark:bg-blue-950 px-5 py-1.5 text-center text-xs text-blue-900 dark:text-blue-200">
+            Read-only copy of your submission from {fmtDate(data.snapshot.submittedAt)}
+            {data.snapshot.releasedAt ? ` · feedback sent ${fmtDate(data.snapshot.releasedAt)}` : ""}
+            {" "}— click a highlight to read your instructor’s comment
           </div>
         )}
         {remote && (
@@ -1228,7 +1417,7 @@ export default function App({ data }: { data: BoardData }) {
           <Tracker
             data={data}
             canAnnotate={canAnnotate}
-            annotations={annotations}
+            annotations={highlightAnnotations}
             onAddDocComment={addDocComment}
             onPaintResult={onPaintResult}
             onAddGeneral={addGeneral}
@@ -1253,7 +1442,7 @@ export default function App({ data }: { data: BoardData }) {
           <Manuscript
             data={data}
             canAnnotate={canAnnotate}
-            annotations={annotations}
+            annotations={highlightAnnotations}
             onAddDocComment={addDocComment}
             onPaintResult={onPaintResult}
             onAddGeneral={addGeneral}
@@ -1267,7 +1456,7 @@ export default function App({ data }: { data: BoardData }) {
             navRequest={navRequest?.tab === "plans" ? { token: navRequest.token, planPath: navRequest.planPath } : null}
             canAnnotate={canAnnotate}
             selectedComponent={selectedComponent}
-            annotations={annotations}
+            annotations={highlightAnnotations}
             onAddPlanComment={addPlanComment}
             onPaintResult={onPaintResult}
             onOpenResults={(slug) => {
@@ -1288,7 +1477,7 @@ export default function App({ data }: { data: BoardData }) {
             navRequest={navRequest?.tab === "results" ? { token: navRequest.token, resultsVersion: navRequest.resultsVersion, scriptPath: navRequest.scriptPath } : null}
             canAnnotate={canAnnotate}
             selectedComponent={selectedComponent}
-            annotations={annotations}
+            annotations={highlightAnnotations}
             onAddResultComment={addResultComment}
             onAddScriptComment={addScriptComment}
             onPaintResult={onPaintResult}
@@ -1304,7 +1493,7 @@ export default function App({ data }: { data: BoardData }) {
             data={data}
             navRequest={navRequest?.tab === "archive" ? { token: navRequest.token, archivePath: navRequest.archivePath } : null}
             canAnnotate={canAnnotate}
-            annotations={annotations}
+            annotations={highlightAnnotations}
             onAddDocComment={addDocComment}
             onPaintResult={onPaintResult}
             onAddGeneral={addGeneral}
@@ -1325,7 +1514,7 @@ export default function App({ data }: { data: BoardData }) {
             data={data}
             canAnnotate={canAnnotate}
             selectedComponent={selectedComponent}
-            annotations={annotations}
+            annotations={highlightAnnotations}
             onAddDocComment={addDocComment}
             onPaintResult={onPaintResult}
             onRequestReport={guardConn(requestReport)}
@@ -1358,7 +1547,7 @@ export default function App({ data }: { data: BoardData }) {
             data={data}
             navRequest={navRequest?.tab === "timeline" ? { token: navRequest.token, clearFilter: navRequest.clearTimelineFilter } : null}
             canAnnotate={canAnnotate}
-            annotations={annotations}
+            annotations={highlightAnnotations}
             onAddDocComment={addDocComment}
             onPaintResult={onPaintResult}
             onAddGeneral={addGeneral}
@@ -1389,5 +1578,6 @@ export default function App({ data }: { data: BoardData }) {
         </>
       )}
     </div>
+    </SentIdsContext.Provider>
   );
 }

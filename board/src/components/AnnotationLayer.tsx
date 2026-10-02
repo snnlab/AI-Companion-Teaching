@@ -1,11 +1,13 @@
 import {
   useCallback,
+  useContext,
   useEffect,
   useRef,
   useState,
   type ReactNode,
 } from "react";
 import { anchorFromSelection, paintHighlights } from "../lib/anchor";
+import { SentIdsContext } from "../lib/sentIds";
 
 interface Pending {
   x: number;
@@ -43,8 +45,13 @@ export default function AnnotationLayer({
   onAdd,
   onPaintResult,
   docKey,
+  readOnly = false,
 }: {
   children: ReactNode;
+  // Paint highlights only — no selection composer. Views mount the layer in
+  // every mode so existing comments always show in place (a snapshot board,
+  // a static export); only boards that may comment pass readOnly={false}.
+  readOnly?: boolean;
   annotations: PaintableAnnotation[];
   onAdd: (a: AnchoredSelection) => void;
   onPaintResult: (
@@ -55,6 +62,7 @@ export default function AnnotationLayer({
   docKey: string; // changes when the displayed document changes
 }) {
   const containerRef = useRef<HTMLDivElement>(null);
+  const sentIds = useContext(SentIdsContext);
   const [pending, setPending] = useState<Pending | null>(null);
   const [composing, setComposing] = useState(false);
   const [text, setText] = useState("");
@@ -72,15 +80,16 @@ export default function AnnotationLayer({
           quote: a.quote,
           occurrenceIndex: a.occurrenceIndex,
           scope: a.scope,
+          kind: sentIds.has(a.id) ? ("sent" as const) : ("draft" as const),
         })),
       );
       onPaintResult(outcome.painted, docKey, outcome.scopeAbsent);
     }, 0);
     return () => window.clearTimeout(t);
-  }, [annotations, docKey, onPaintResult]);
+  }, [annotations, docKey, onPaintResult, sentIds]);
 
   const captureSelection = useCallback(() => {
-    if (composing) return;
+    if (composing || readOnly) return;
     const el = containerRef.current;
     if (!el) return;
     const sel = window.getSelection();
@@ -102,7 +111,7 @@ export default function AnnotationLayer({
       y: rect.bottom - host.top + 6,
       anchor,
     });
-  }, [composing]);
+  }, [composing, readOnly]);
 
   const handleMouseUp = useCallback(() => {
     // Only the composer knows when it is done; a mouseup while it is open is

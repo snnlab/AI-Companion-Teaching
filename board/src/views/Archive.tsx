@@ -272,18 +272,15 @@ export default function Archive({
           ))}
         </div>
       )}
-      {canAnnotate ? (
-        <AnnotationLayer
-          docKey={docKey}
-          annotations={docAnnotations}
-          onPaintResult={onPaintResult}
-          onAdd={addComment}
-        >
-          {body}
-        </AnnotationLayer>
-      ) : (
-        body
-      )}
+      <AnnotationLayer
+        readOnly={!canAnnotate}
+        docKey={docKey}
+        annotations={docAnnotations}
+        onPaintResult={onPaintResult}
+        onAdd={addComment}
+      >
+        {body}
+      </AnnotationLayer>
       {canAnnotate && (
         <p className="mt-2 text-xs text-stone-400 dark:text-stone-500">
           Select any text to attach a comment.

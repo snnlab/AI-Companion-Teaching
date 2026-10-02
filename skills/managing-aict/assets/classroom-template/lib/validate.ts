@@ -7,7 +7,9 @@
 
 // Vercel's default serverless function body limit. Requests over this are
 // rejected with 413 before we even try to parse JSON.
-export const MAX_ENVELOPE_BYTES = 4718592; // 4.5 * 1024 * 1024
+// Vercel's own Function body limit (4.5 MB, decimal): anything bigger never
+// reaches this handler, so the check matches it exactly.
+export const MAX_ENVELOPE_BYTES = 4_500_000;
 
 export const IDEMPOTENCY_KEY_RE = /^[0-9a-f]{16}$/;
 
@@ -105,6 +107,25 @@ export function validateCommentBody(
   }
   return { ok: true, value: b as unknown as CommentBody };
 }
+
+/** Body of an instructor's comment edit: the new text, and optionally the
+ * integrity flag (null clears it). Same length cap as a new comment. */
+export function validateCommentPatch(
+  body: unknown,
+): { ok: true; value: { comment: string; category?: "integrity" | null } } | { ok: false; error: string } {
+  if (typeof body !== "object" || body === null) return { ok: false, error: "not an object" };
+  const b = body as Record<string, unknown>;
+  if (typeof b.comment !== "string" || !b.comment.trim()) return { ok: false, error: "empty comment" };
+  if (b.comment.length > MAX_COMMENT_LEN) return { ok: false, error: "comment too long" };
+  if ("category" in b && b.category !== null && b.category !== "integrity") {
+    return { ok: false, error: "bad category" };
+  }
+  const value: { comment: string; category?: "integrity" | null } = { comment: b.comment.trim() };
+  if ("category" in b) value.category = b.category as "integrity" | null;
+  return { ok: true, value };
+}
+
+export const COMMENT_ID_RE = COMMENT_UUID_RE;
 
 function isIsoDate(v: unknown): v is string {
   return isStr(v) && v.length > 0 && !Number.isNaN(Date.parse(v));

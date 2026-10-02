@@ -46,18 +46,19 @@ export async function run(
   const stored = await listSubmissionMeta(blobToken, studentId);
   const shareHashes = Array.from(new Set(stored.map((s) => s.idempotencyKey)));
 
+  // Per-submission "released" state. Nothing about a submission reaches the
+  // student — not on /me, not through /ait:check, not in the history board —
+  // until the instructor presses "Send feedback to student": comments on an
+  // unreleased submission are still the instructor's work in progress. Once
+  // released, every comment on it (including later edits) is visible.
+  const releases = await Promise.all(shareHashes.map((sh) => getRelease(blobToken, sh)));
+  const released = shareHashes.filter((_, i) => releases[i]?.releasedAt);
   const perSubmission = await Promise.all(
-    shareHashes.map((sh) => listCommentsForShareHash(blobToken, sh)),
+    released.map((sh) => listCommentsForShareHash(blobToken, sh)),
   );
   const comments: StoredComment[] = perSubmission.flat();
   comments.sort((a, b) => (a.receivedAt < b.receivedAt ? -1 : a.receivedAt > b.receivedAt ? 1 : 0));
 
-  // Per-submission "released" state — the /me page uses releasedAt both to
-  // decide what to show at all (nothing until the instructor clicks "학생에게
-  // 피드백 보내기") and to compute its "new feedback" badge. /ait:check
-  // ignores this list and still pulls every comment; releasing only gates the
-  // passive web notification, never the explicit student-initiated pull.
-  const releases = await Promise.all(shareHashes.map((sh) => getRelease(blobToken, sh)));
   const byKey = new Map(
     stored.map((s) => [s.idempotencyKey, s.submittedAt] as const),
   );

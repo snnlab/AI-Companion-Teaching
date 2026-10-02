@@ -1,6 +1,6 @@
 // POST /api/release  — instructor-only. Body { shareHash, by? }. Marks one
 //   submission's feedback as "released to the student": the drilled-in
-//   board's "학생에게 피드백 보내기" (Send feedback to the student) button
+//   board's "Send feedback to student" button
 //   calls this. Until it is set, the student's /me page shows nothing for
 //   that submission.
 // GET  /api/release?shareHash=<hash>  — instructor-only. Returns
@@ -78,8 +78,8 @@ export async function run(
           ? `https://${env.VERCEL_PROJECT_PRODUCTION_URL}`
           : "";
         push = await sendToStudent(blobToken, owner, vapid, {
-          title: "새 피드백",
-          body: `${by ?? "교수자"}님이 피드백을 보냈습니다.`,
+          title: "New feedback",
+          body: `${by ?? "Your instructor"} sent you feedback.`,
           url: `${base}/me`,
         });
       } catch {

@@ -389,6 +389,49 @@ class TestExternalizeAssets(unittest.TestCase):
         self.assertNotIn("externalAssets", env["payload"])
 
 
+class TestSizeBudget(unittest.TestCase):
+    """Vercel's 4.5 MB body cap: what is measured is what is sent, a long
+    manuscript travels separately, and an oversize submission stops early."""
+
+    def test_sent_bytes_equal_measured_bytes_for_korean_text(self):
+        env = {"payload": {"files": {"manuscript": {"content": "한국어 원고 " * 1000}}}}
+        body = submit.envelope_body(env)
+        self.assertEqual(len(body), submit._envelope_bytes(env))
+        self.assertIn("한국어".encode("utf-8"), body)  # UTF-8, not \uXXXX escapes
+        self.assertNotIn(b"\\u", body)
+
+    def test_long_manuscript_body_is_sent_separately(self):
+        import hashlib
+        text = "<p>" + "가" * (submit.MANUSCRIPT_EXTERNALIZE_BYTES // 3 + 10) + "</p>"
+        env = _envelope_with_assets({}, {})
+        env["payload"]["files"]["manuscript"].update(content=text, format="docx-html")
+        uploads = submit.externalize_assets(env)
+        sha = hashlib.sha256(text.encode("utf-8")).hexdigest()
+        self.assertEqual(env["payload"]["files"]["manuscript"]["content"], "aict-asset:" + sha)
+        self.assertEqual(uploads[sha].decode("utf-8"), text)
+        self.assertEqual(env["payload"]["externalAssets"][sha]["mime"], "text/html; charset=utf-8")
+        self.assertLess(submit._envelope_bytes(env), 10_000)
+
+    def test_short_manuscript_stays_inline(self):
+        env = _envelope_with_assets({}, {})
+        env["payload"]["files"]["manuscript"]["content"] = "<p>short</p>"
+        self.assertEqual(submit.externalize_assets(env), {})
+        self.assertEqual(env["payload"]["files"]["manuscript"]["content"], "<p>short</p>")
+
+    def test_oversize_message_names_the_biggest_parts(self):
+        env = {
+            "gitExcerpt": {"commits": []},
+            "payload": {"files": {
+                "masterPlan": {"path": "plans/master-plan.md", "content": "m" * 4_500_000},
+                "decisionLog": {"path": "plans/decision-log.md", "content": "short"},
+                "executionPlans": [],
+            }},
+        }
+        msg = submit.oversize_message(env)
+        self.assertIn("plans/master-plan.md 4.5 MB", msg)
+        self.assertIn("over the 4.4 MB", msg)
+
+
 class TestUploadAssets(unittest.TestCase):
     def setUp(self):
         self._orig = submit._post

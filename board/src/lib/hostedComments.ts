@@ -91,3 +91,28 @@ export function buildCommentBody(a: Annotation, data: BoardData, author: string,
     annotation: a,
   };
 }
+
+// Instructor edits to a SENT comment (classroom roster server only — the
+// single-project web-template has no PATCH/DELETE). Resolve to the updated
+// comment / true, or throw with the HTTP status so the caller can say why.
+function commentUrl(c: Pick<StoredComment, "id" | "shareHash">): string {
+  return `/api/comments?shareHash=${encodeURIComponent(c.shareHash)}&id=${encodeURIComponent(c.id)}`;
+}
+
+export async function patchComment(
+  c: Pick<StoredComment, "id" | "shareHash">,
+  comment: string,
+): Promise<StoredComment> {
+  const res = await fetch(commentUrl(c), {
+    method: "PATCH",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify({ comment }),
+  });
+  if (!res.ok) throw new Error(String(res.status));
+  return ((await res.json()) as { comment: StoredComment }).comment;
+}
+
+export async function deleteComment(c: Pick<StoredComment, "id" | "shareHash">): Promise<void> {
+  const res = await fetch(commentUrl(c), { method: "DELETE" });
+  if (!res.ok) throw new Error(String(res.status));
+}

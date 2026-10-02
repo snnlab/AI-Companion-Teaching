@@ -109,18 +109,15 @@ export default function Tracker({
     return (
       <div>
         <Notice text="The master plan did not match the expected format — showing it raw." />
-        {canAnnotate ? (
-          <AnnotationLayer
-            docKey="tracker"
-            annotations={docAnnotations}
-            onPaintResult={onPaintResult}
-            onAdd={addComment}
-          >
-            <Markdown source={mp.raw} />
-          </AnnotationLayer>
-        ) : (
+        <AnnotationLayer
+          readOnly={!canAnnotate}
+          docKey="tracker"
+          annotations={docAnnotations}
+          onPaintResult={onPaintResult}
+          onAdd={addComment}
+        >
           <Markdown source={mp.raw} />
-        )}
+        </AnnotationLayer>
       </div>
     );
   }
@@ -670,18 +667,15 @@ export default function Tracker({
 
   return (
     <div>
-      {canAnnotate ? (
-        <AnnotationLayer
-          docKey="tracker"
-          annotations={docAnnotations}
-          onPaintResult={onPaintResult}
-          onAdd={addComment}
-        >
-          {body}
-        </AnnotationLayer>
-      ) : (
-        body
-      )}
+      <AnnotationLayer
+        readOnly={!canAnnotate}
+        docKey="tracker"
+        annotations={docAnnotations}
+        onPaintResult={onPaintResult}
+        onAdd={addComment}
+      >
+        {body}
+      </AnnotationLayer>
       {canAnnotate && (
         <p className="mt-2 text-xs text-stone-400 dark:text-stone-500">
           Select any text to attach a comment.

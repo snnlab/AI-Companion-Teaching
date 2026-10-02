@@ -120,7 +120,15 @@ export interface PaintOutcome {
  */
 export function paintHighlights(
   container: HTMLElement,
-  anchors: { id: string; quote: string; occurrenceIndex: number; scope?: string }[],
+  anchors: {
+    id: string;
+    quote: string;
+    occurrenceIndex: number;
+    scope?: string;
+    // "sent" = already on the server; "draft" = a local pending comment.
+    // Stamped as data-kind so CSS can tell them apart.
+    kind?: "sent" | "draft";
+  }[],
 ): PaintOutcome {
   clearHighlights(container);
   const painted = new Set<string>();
@@ -167,7 +175,7 @@ export function clearHighlights(container: HTMLElement): void {
 
 function paintOne(
   container: HTMLElement,
-  a: { id: string; quote: string; occurrenceIndex: number },
+  a: { id: string; quote: string; occurrenceIndex: number; kind?: "sent" | "draft" },
 ): boolean {
   // Walk text nodes accumulating normalized text; find the nth occurrence of
   // the quote; wrap the covered range(s) in <mark>.
@@ -216,6 +224,7 @@ function paintOne(
     // surroundContents fails across element boundaries; extract/wrap instead.
     const mark = document.createElement("mark");
     mark.setAttribute("data-annotation", a.id);
+    if (a.kind) mark.setAttribute("data-kind", a.kind);
     mark.setAttribute("tabindex", "0");
     range.surroundContents(mark);
     return true;
@@ -240,6 +249,7 @@ function paintOne(
         r.setEnd(n, to);
         const mark = document.createElement("mark");
         mark.setAttribute("data-annotation", a.id);
+        if (a.kind) mark.setAttribute("data-kind", a.kind);
         mark.setAttribute("tabindex", "0");
         r.surroundContents(mark);
       }

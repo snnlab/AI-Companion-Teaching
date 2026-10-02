@@ -574,26 +574,23 @@ export default function PlanReader({
               </div>
             )}
             {cardRows.length > 0 && <MetadataCard rows={cardRows} />}
-            {annotatable ? (
-              <AnnotationLayer
-                docKey={doc.path}
-                annotations={docAnnotations}
-                onPaintResult={onPaintResult}
-                onAdd={(partial) =>
-                  onAddPlanComment({
-                    ...partial,
-                    planPath: doc.path,
-                    component: group.component,
-                    version: doc.version,
-                    isDraft: doc.isDraft,
-                  })
-                }
-              >
-                <PlanBody content={docBody} level={level} stripMetadata={cardRows.length > 0} />
-              </AnnotationLayer>
-            ) : (
+            <AnnotationLayer
+              readOnly={!annotatable}
+              docKey={doc.path}
+              annotations={docAnnotations}
+              onPaintResult={onPaintResult}
+              onAdd={(partial) =>
+                onAddPlanComment({
+                  ...partial,
+                  planPath: doc.path,
+                  component: group.component,
+                  version: doc.version,
+                  isDraft: doc.isDraft,
+                })
+              }
+            >
               <PlanBody content={docBody} level={level} stripMetadata={cardRows.length > 0} />
-            )}
+            </AnnotationLayer>
           </div>
         )}
         {/* Trailer state lives outside the diff/full-view branch so the sign-off

@@ -3,7 +3,9 @@
 export interface BoardData {
   schemaVersion: number;
   generatedAt: string;
-  mode: "live" | "static" | "remote" | "hosted";
+  // snapshot: a read-only copy of one past classroom submission with the
+  // instructor's released comments (/me/board, /ait:check --open).
+  mode: "live" | "static" | "remote" | "hosted" | "snapshot";
   focus: string | null;
   focusResults?: number | null; // --focus slug:rN opens the Results view on rN
   focusView?: "reports" | null;
@@ -17,6 +19,8 @@ export interface BoardData {
   // board.py --seed-annotations; resolved to anchors in the browser on mount.
   seededAnnotations?: SeededAnnotation[];
   shareHash?: string; // remote mode: Python-computed, echoed back in feedback
+  // snapshot mode: when the submission was made / released, and its comments.
+  snapshot?: SnapshotInfo;
   // hosted mode: pre-fills the comment-author field when it would otherwise
   // start blank (the roster server passes its COURSE_INSTRUCTOR_NAME here).
   // A value the reviewer has already typed on this device still wins.
@@ -60,7 +64,9 @@ export interface BoardFile {
 // annotatable (rendered + AnnotationLayer); "unsupported" (hwp/hwpx, or a
 // docx that failed to parse) shows `note` as guidance instead of content.
 export interface ManuscriptFile extends BoardFile {
-  format: "markdown" | "docx-text" | "unsupported";
+  // docx-html (v0.13): a Word file converted to allowlisted HTML.
+  // docx-text: the pre-v0.13 Markdown-ish extraction, still in older submissions.
+  format: "markdown" | "docx-html" | "docx-text" | "unsupported";
   note?: string;
   // Figures, keyed by the exact href the manuscript uses (markdown) or
   // "docx-media/<name>" (Word). Present-only; values are board URLs or data: URIs.
@@ -466,6 +472,8 @@ export interface ScorecardItem {
 // ---- annotations ----
 
 export interface PlanCommentAnnotation {
+  // Server comment id this pending item was seeded from (see SeededAnnotation).
+  sourceId?: string;
   id: string;
   type: "plan-comment";
   planPath: string;
@@ -509,10 +517,11 @@ export interface ReportRequest {
 // A reviewer's comment before browser anchoring. board.py --seed-annotations
 // injects a list of these; App turns each into a pending annotation keyed by
 // `scope`: plan → PlanCommentAnnotation, master → DocCommentAnnotation (tracker),
-// results → ResultCommentAnnotation (report target). Missing scope defaults to
-// "plan" (the original Phase-1 shape).
+// results → ResultCommentAnnotation (report target), manuscript →
+// DocCommentAnnotation (manuscript view). Missing scope defaults to "plan"
+// (the original Phase-1 shape).
 export interface SeededAnnotation {
-  scope?: "plan" | "master" | "results";
+  scope?: "plan" | "master" | "results" | "manuscript";
   // common to every scope
   sectionHeading: string;
   quote: string;
@@ -525,9 +534,19 @@ export interface SeededAnnotation {
   isDraft?: boolean;
   // results scope
   resultsVersion?: number;
+  // manuscript scope: the manuscript path the comment was made on, and which
+  // match of the quote it marked (instructor comments carry it exactly).
+  docKey?: string;
+  occurrenceIndex?: number;
+  // The classroom server's comment id (instructor comments via /ait:check).
+  // An edited comment arrives again with the same id and replaces the older
+  // pending copy.
+  commentId?: string;
 }
 
 export interface DocCommentAnnotation {
+  // Server comment id this pending item was seeded from (see SeededAnnotation).
+  sourceId?: string;
   id: string;
   type: "doc-comment";
   view: "tracker" | "timeline" | "reviews" | "archive" | "reports" | "manuscript";
@@ -564,6 +583,8 @@ export interface GeneralAnnotation {
 }
 
 export interface ResultCommentAnnotation {
+  // Server comment id this pending item was seeded from (see SeededAnnotation).
+  sourceId?: string;
   id: string;
   type: "result-comment";
   component: string;
@@ -606,6 +627,12 @@ export interface ScriptCommentAnnotation {
   category?: "integrity";
 }
 
+export interface SnapshotInfo {
+  submittedAt: string;
+  releasedAt: string | null;
+  comments: StoredComment[];
+}
+
 export interface StoredComment {
   id: string;
   clientId: string;
@@ -613,6 +640,8 @@ export interface StoredComment {
   shareHash: string;
   docHash: string | null;
   annotation: Annotation;
+  // Set when the instructor edited the text after sending (classroom server).
+  editedAt?: string;
   receivedAt: string;
 }
 

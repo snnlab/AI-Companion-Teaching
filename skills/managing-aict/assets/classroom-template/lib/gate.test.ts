@@ -25,6 +25,13 @@ describe("gateDecision", () => {
   it("always allows GET /api/my-comments without the instructor cookie (bearer-only route)", () => {
     expect(gateDecision("/api/my-comments", "GET", false).action).toBe("allow");
   });
+  it("allows the history board page and its bearer-only submission route pre-auth", () => {
+    expect(gateDecision("/api/my-submission", "GET", false).action).toBe("allow");
+    expect(gateDecision("/me/board", "GET", false).action).toBe("allow");
+    expect(gateDecision("/me-board.html", "GET", false).action).toBe("allow");
+    // ...but nothing else under /me/ slips through
+    expect(gateDecision("/me/other", "GET", false).action).toBe("loginPage");
+  });
   it("always allows the student feedback page + its push assets pre-auth", () => {
     expect(gateDecision("/me", "GET", false).action).toBe("allow");
     expect(gateDecision("/me.html", "GET", false).action).toBe("allow");

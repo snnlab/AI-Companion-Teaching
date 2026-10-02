@@ -1,4 +1,5 @@
-import { useState } from "react";
+import { useContext, useState } from "react";
+import { SentIdsContext } from "../lib/sentIds";
 import type { BoardFile, ScriptCommentAnnotation } from "../lib/types";
 
 /** Line-numbered script snapshot with line-range comments. Text-selection
@@ -21,6 +22,7 @@ export default function ScriptViewer({
   ) => void;
   saved?: ScriptCommentAnnotation[];
 }) {
+  const sentIds = useContext(SentIdsContext);
   const lines = file.content.replace(/\n$/, "").split("\n");
   const [selStart, setSelStart] = useState<number | null>(null);
   const [selEnd, setSelEnd] = useState<number | null>(null);
@@ -95,6 +97,9 @@ export default function ScriptViewer({
                 }`}
                 data-annotation={
                   savedAnchor ? savedAnchor.id : undefined
+                }
+                data-kind={
+                  savedAnchor ? (sentIds.has(savedAnchor.id) ? "sent" : "draft") : undefined
                 }
                 role={canAnnotate || savedAnchor ? "button" : undefined}
                 tabIndex={canAnnotate || savedAnchor ? 0 : undefined}

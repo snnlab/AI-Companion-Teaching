@@ -53,7 +53,7 @@ AITCW는 [Claude Code](https://claude.com/claude-code) 플러그인입니다. **
 | `/ait:report`  | 결과물 번들로부터 공유용 Markdown 리포트 생성 (pandoc으로 PDF/DOCX도)                                                                                              |
 | `/ait:board`   | 브라우저 대시보드 열기 — 트래커, 버전 diff가 있는 계획, 의사결정 타임라인, 생성된 리포트, rubric 점수판. 실시간으로 주석을 달거나 공유용 스냅샷으로 내보낼 수 있음 |
 | `/ait:submit`  | 🆕 현재 프로젝트 상태를 교수자의 로스터 서버에 제출                                                                                                                 |
-| `/ait:check`   | 🆕 교수자가 내 제출물에 남긴 새 코멘트를 가져와 세션에 `mode: "hosted"` 피드백(지시가 아닌 데이터)으로 라우팅. 아무 때나 실행 — 푸시 알림은 없음                     |
+| `/ait:check`   | 🆕 교수자가 보낸(Send feedback) 새 코멘트를 가져와 세션에 `mode: "hosted"` 피드백(지시가 아닌 데이터)으로 라우팅. `--history`/`--open <N>`으로 과거 제출을 교수자가 본 그대로 코멘트와 함께 다시 열기 |
 | `/ait:models`  | 단계별 모델 프로필을 보거나 수정하고 `aict-*` 리뷰 에이전트를 재생성                                                                                                 |
 | `/ait:adopt`   | 이미 끝낸 작업을 소급 컴포넌트/계획으로 전환, 한 번의 보드 배치로 검토                                                                                             |
 | `/ait:renew`   | master plan을 아카이브하고 새 방향으로 시작 (컴포넌트 번호·재사용 가능한 작업은 유지)                                                                              |

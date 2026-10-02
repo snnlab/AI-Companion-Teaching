@@ -205,8 +205,9 @@ export default function Timeline({
               ))}
             </ol>
           );
-          return canAnnotate ? (
+          return (
             <AnnotationLayer
+              readOnly={!canAnnotate}
               docKey="timeline"
               annotations={docAnnotations}
               onPaintResult={onPaintResult}
@@ -214,8 +215,6 @@ export default function Timeline({
             >
               {list}
             </AnnotationLayer>
-          ) : (
-            list
           );
         })()
       )}

@@ -10,10 +10,14 @@
 //   comments/<shareHash>/<id>.json   one comment, content-addressed by its
 //                                    own uuid within the shareHash "folder"
 //
+// Creation is create-only (putComment). The instructor may later change a
+// comment's text (updateComment — stamps editedAt, never touches the anchor)
+// or delete it (deleteComment); students see either on their next read.
+//
 // Mirrors web-template/lib/blobstore.ts's putComment/listComments shape and
 // create/replay/conflict idempotency — duplicated, not imported, same as
 // lib/validate.ts's validateCommentBody above.
-import { put, list, get } from "@vercel/blob";
+import { put, list, get, del } from "@vercel/blob";
 
 const PREFIX = "comments/";
 
@@ -21,6 +25,8 @@ export interface StoredComment {
   id: string; clientId: string; author: string; shareHash: string;
   docHash: string | null;
   annotation: Record<string, unknown>; receivedAt: string;
+  // Set when the instructor edits the comment text after creation.
+  editedAt?: string;
 }
 
 export type PutCommentResult = "created" | "replay" | "conflict";
@@ -50,7 +56,7 @@ function sameCommentContent(a: StoredComment, b: StoredComment): boolean {
   return canonicalJson(aContent) === canonicalJson(bContent);
 }
 
-async function getComment(token: string, shareHash: string, id: string): Promise<StoredComment | null> {
+export async function getComment(token: string, shareHash: string, id: string): Promise<StoredComment | null> {
   const result = await get(commentPath(shareHash, id), { access: "private", token });
   if (result?.statusCode !== 200) return null;
   try {
@@ -100,4 +106,39 @@ export async function listCommentsForShareHash(token: string, shareHash: string)
     cursor = page.hasMore ? page.cursor : undefined;
   } while (cursor);
   return out;
+}
+
+export interface CommentPatch {
+  comment: string;
+  // null clears the integrity flag; undefined leaves it as it was.
+  category?: "integrity" | null;
+}
+
+/** Rewrite one comment's text in place. Returns the updated comment, or null
+ * when it does not exist. Anchor fields, id and receivedAt are kept. */
+export async function updateComment(
+  token: string,
+  shareHash: string,
+  id: string,
+  patch: CommentPatch,
+  now: string,
+): Promise<StoredComment | null> {
+  const existing = await getComment(token, shareHash, id);
+  if (!existing) return null;
+  const annotation: Record<string, unknown> = { ...existing.annotation, comment: patch.comment };
+  if (patch.category === null) delete annotation.category;
+  else if (patch.category !== undefined) annotation.category = patch.category;
+  const updated: StoredComment = { ...existing, annotation, editedAt: now };
+  await put(commentPath(shareHash, id), JSON.stringify(updated), {
+    access: "private",
+    allowOverwrite: true,
+    contentType: "application/json",
+    token,
+  });
+  return updated;
+}
+
+/** Delete one comment. Deleting one that is already gone is not an error. */
+export async function deleteComment(token: string, shareHash: string, id: string): Promise<void> {
+  await del(commentPath(shareHash, id), { token });
 }

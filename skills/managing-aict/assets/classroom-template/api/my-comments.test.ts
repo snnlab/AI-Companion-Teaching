@@ -65,6 +65,15 @@ describe("GET /api/my-comments", () => {
   });
 
   it("merges comments across every one of the student's own submissions, sorted by receivedAt", async () => {
+    await mergedComments(["share-a", "share-b"]).then((ids) => expect(ids).toEqual(["c2", "c1"]));
+  });
+
+  it("withholds comments on a submission the instructor has not released yet", async () => {
+    await mergedComments(["share-a"]).then((ids) => expect(ids).toEqual(["c1"]));
+    await mergedComments([]).then((ids) => expect(ids).toEqual([]));
+  });
+
+  async function mergedComments(released: string[]): Promise<string[]> {
     mockAliceWithSubmissions([
       { key: "share-a", blobs: [{ pathname: "comments/share-a/c1.json" }] },
       { key: "share-b", blobs: [{ pathname: "comments/share-b/c2.json" }] },
@@ -89,6 +98,10 @@ describe("GET /api/my-comments", () => {
       if (pathname === "comments/share-b/c2.json") {
         return { statusCode: 200, stream: streamOf({ id: "c2", clientId: "x", author: "instructor", shareHash: "share-b", docHash: null, annotation: { comment: "earlier" }, receivedAt: "2026-08-05T00:00:00.000Z" }) };
       }
+      const rel = /^release\/(.+)\.json$/.exec(pathname);
+      if (rel && released.includes(rel[1])) {
+        return { statusCode: 200, stream: streamOf({ releasedAt: "2026-08-20T00:00:00.000Z", by: "K" }) };
+      }
       return origGet ? origGet(pathname) : null;
     });
 
@@ -97,8 +110,8 @@ describe("GET /api/my-comments", () => {
     const body = r.json as { studentId: string; comments: { id: string }[] };
     expect(body.studentId).toBe("alice");
     // earlier receivedAt first
-    expect(body.comments.map((c) => c.id)).toEqual(["c2", "c1"]);
-  });
+    return body.comments.map((c) => c.id);
+  }
 
   it("returns an empty list when the student has no submissions", async () => {
     mockAliceWithSubmissions([]);

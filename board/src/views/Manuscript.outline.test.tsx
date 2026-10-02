@@ -125,3 +125,32 @@ describe("Manuscript", () => {
     expect(published).toEqual([]);
   });
 });
+
+describe("Manuscript (Word, docx-html)", () => {
+  it("renders the converted HTML and paints a comment across formatting and table cells", async () => {
+    const { waitFor } = await import("@testing-library/react");
+    const content =
+      '<h1>Paper</h1><p>Panel studies <strong>routinely</strong> report effects.</p>' +
+      '<div class="tbl"><table><tbody><tr><td class="bt bb">CLPM</td><td class="bt bb ar">0.071</td></tr></tbody></table></div>' +
+      '<script>window.__pwned = 1</script>';
+    const d = data({ path: "plans/manuscript.docx", content, format: "docx-html" });
+    const ann = {
+      id: "ann-x", type: "doc-comment" as const, view: "manuscript" as const,
+      docKey: "plans/manuscript.docx", scope: "manuscript", quote: "routinely report",
+      prefix: "", suffix: "", sectionHeading: "manuscript", occurrenceIndex: 0,
+      anchored: true, comment: "c",
+    };
+    const { container } = render(
+      <Manuscript data={d} canAnnotate={true} annotations={[ann]}
+        onAddDocComment={noop} onPaintResult={noop} onAddGeneral={noop} />,
+    );
+    expect(container.querySelector(".prose-md.docx table td.ar")?.textContent).toBe("0.071");
+    expect(container.querySelector("script")).toBeNull();
+    expect(screen.queryByText(/formatting and tables are not preserved/)).toBeNull();
+    await waitFor(() => {
+      const marks = container.querySelectorAll('mark[data-annotation="ann-x"]');
+      if (marks.length === 0) throw new Error("not painted");
+      expect(Array.from(marks, (m) => m.textContent).join("")).toBe("routinely report");
+    });
+  });
+});

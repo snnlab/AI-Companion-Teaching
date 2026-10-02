@@ -1,5 +1,73 @@
 # Changelog
 
+## [0.13.0] - 2026-10-02
+
+Instructor feedback on the review workflow, plus a way back to past
+submissions. **Instructors: redeploy the classroom server** — refresh the
+deploy directory from the plugin's `classroom-template/`, regenerate
+`index.html` **and the new `me-board.html`** (see `/ait:host` `--init`), then
+`--deploy`.
+
+### Added
+- **Comments stay highlighted, Word-style.** A saved comment keeps its
+  highlight (it used to vanish the moment it was saved, and comments loaded
+  from the server were never highlighted). Clicking a highlight opens a
+  balloon beside the text with the comment, author and time; overlapping
+  comments show together. Sent comments are solid yellow; a comment whose
+  save failed is lighter with a dashed underline and says "Not saved yet".
+  Clicking a "Sent" card in the panel jumps to its highlight and opens the
+  balloon (manuscript comments used to jump to the Tracker tab).
+- **Instructors can edit and delete sent comments** — from the balloon or the
+  panel card, with a confirmation before deleting. Edits are marked
+  "Edited · <time>" everywhere the student sees them. New `PATCH`/`DELETE
+  /api/comments?shareHash=&id=` (instructor session only).
+- **Past submissions reopen read-only with their feedback in place.** On
+  `/me`, each reviewed submission has **Open board**: the submission exactly
+  as the instructor reviewed it, comments highlighted, balloons on click.
+  In Claude Code, `/ait:check --history` lists reviewed submissions and
+  `/ait:check --open <N>` saves one under `plans/.aict-history/` (gitignored)
+  — a self-contained `board.html` and a `feedback.md` with each comment in
+  its context for Claude to read — and opens it; saved copies reopen offline.
+  New student-token route `GET /api/my-submission`; students may read back
+  their own uploaded files from `/api/assets`.
+- **Print / Save as PDF** on the Manuscript tab: a clean copy of the
+  manuscript without the board around it, optionally with each highlight
+  numbered and the comments listed after the text. Tables repeat their
+  header row on every page.
+- **Manuscript comments reach the student's board.** `/ait:check` now seeds
+  them, so they paint on the student's own manuscript like plan comments.
+
+### Changed
+- **Word manuscripts are converted to HTML, not plain text.** Tables (merged
+  cells, column widths, header rows and Word's own borders — an APA
+  three-line table stays three lines), bold/italic/underline/strike,
+  super/subscript, lists, footnotes and endnotes, hyperlinks, headings from
+  any style (including localized style names), captions, text boxes and
+  figures at their Word size now come through. Figures Word stores in a form
+  a browser cannot show (EMF/WMF, native charts, SmartArt, OLE objects such
+  as MathType) leave a visible placeholder instead of disappearing. Field
+  codes (citation-manager data) and tracked deletions are left out. The
+  board rebuilds the HTML from an allowlist before showing it. Comments left
+  on a Word manuscript before this release show as written on an older
+  version once.
+- **Feedback reaches students only after "Send feedback to student".**
+  `/ait:check` used to pull comments the instructor had not sent yet; now it,
+  `/me` and the history board all show only sent feedback.
+- **Edited comments come back through `/ait:check`**, prefixed "(edited by
+  the instructor <date>)", and replace the older copy on the student's board.
+- **The `/me` page and its push notification are in English**, like the
+  board; `/me` labels manuscript comments "Manuscript".
+
+### Fixed
+- **Submissions are measured as sent.** The envelope was measured as UTF-8
+  but sent with every non-ASCII character escaped (`\uXXXX`), so a Korean
+  manuscript weighed up to twice what was checked. It is now sent as UTF-8.
+- **Oversize submissions stop before uploading, with a reason.** The server's
+  limit was 4.5 MiB while Vercel's is 4.5 MB, so a submission in between got
+  Vercel's own HTML error. The server limit now matches Vercel, the client
+  stops at 4.4 MB before uploading any file and names the largest parts, and
+  a manuscript body over 1 MB is sent separately like figures.
+
 ## [0.12.0] - 2026-10-02
 
 ### Added

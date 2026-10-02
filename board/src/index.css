@@ -10,6 +10,7 @@
   --aict-prose-heading: var(--color-stone-900);
   --aict-prose-body: var(--color-stone-800);
   --aict-prose-muted: var(--color-stone-500);
+  --aict-docx-rule: var(--color-stone-700);
 }
 
 html.dark {
@@ -18,6 +19,7 @@ html.dark {
   --aict-prose-heading: var(--color-stone-100);
   --aict-prose-body: var(--color-stone-200);
   --aict-prose-muted: var(--color-stone-400);
+  --aict-docx-rule: var(--color-stone-400);
 }
 
 code,
@@ -165,6 +167,76 @@ pre {
   color: var(--color-blue-700);
   text-decoration: underline;
 }
+/* Word manuscripts (v0.13, board.py's _docx_to_html). Tables carry Word's
+   own borders as class tokens (bt/bb/bl/br per cell), so an APA three-line
+   table stays three lines and a "Table Grid" table stays a grid — the
+   generic Markdown table rules above are reset first. */
+.prose-md.docx th,
+.prose-md.docx td {
+  border: 0;
+  background: none;
+  font-weight: inherit;
+  padding: 0.3rem 0.5rem;
+}
+.prose-md.docx thead th { font-weight: 600; }
+.prose-md.docx tbody tr:hover { background: none; }
+.prose-md.docx .bt { border-top: 1px solid var(--aict-docx-rule); }
+.prose-md.docx .bb { border-bottom: 1px solid var(--aict-docx-rule); }
+.prose-md.docx .bl { border-left: 1px solid var(--aict-docx-rule); }
+.prose-md.docx .br { border-right: 1px solid var(--aict-docx-rule); }
+.prose-md.docx .sh { background: var(--color-stone-100); }
+.prose-md.docx td > p,
+.prose-md.docx th > p { margin: 0.15rem 0; }
+.prose-md.docx .tbl {
+  overflow-x: auto;
+  margin: 0.75rem 0;
+}
+.prose-md.docx .tbl table {
+  margin: 0;
+  width: auto;
+  min-width: 60%;
+}
+.prose-md.docx .ac { text-align: center; }
+.prose-md.docx .ar { text-align: right; }
+.prose-md.docx .caption {
+  font-size: 0.9em;
+  color: var(--aict-prose-muted);
+  margin: 0.4rem 0 0.75rem;
+}
+/* Figures keep their Word size (width/height attributes) and shrink only
+   when the column is narrower. Inline ones sit in the text; anchored
+   ("floating") ones get their own line. */
+.prose-md.docx img {
+  display: inline-block;
+  margin: 0.25rem 0;
+  padding: 0;
+  border: 0;
+  vertical-align: middle;
+}
+.prose-md.docx img.fig {
+  display: block;
+  margin: 0.75rem auto;
+}
+.prose-md.docx .fig-missing {
+  display: inline-block;
+  margin: 0.25rem 0;
+  padding: 0.4rem 0.6rem;
+  border: 1px dashed var(--color-amber-500);
+  border-radius: 0.375rem;
+  background: var(--color-amber-50);
+  color: var(--color-amber-900);
+  font-size: 0.85em;
+  font-style: normal;
+}
+.prose-md.docx sup.fn a { text-decoration: none; }
+.prose-md.docx .footnotes {
+  margin-top: 2rem;
+  padding-top: 0.75rem;
+  border-top: 1px solid var(--color-stone-200);
+  font-size: 0.85em;
+}
+.prose-md.docx .footnotes p { margin: 0.2rem 0; }
+
 /* Manuscript math: KaTeX MathML output, laid out natively by the browser.
    A math font is named explicitly — the platform fallback for <math> is
    often a plain text face that mis-sizes radicals and big operators. */
@@ -214,9 +286,22 @@ pre {
 }
 mark[data-annotation] {
   background: var(--color-amber-200);
+  color: inherit;
   padding: 0 0.1rem;
   border-radius: 0.15rem;
   cursor: pointer;
+}
+/* A local comment not on the server yet: lighter fill + dashed underline, so
+   the instructor can tell a saved comment from one whose save failed. */
+mark[data-annotation][data-kind="draft"] {
+  background: var(--color-amber-100);
+  text-decoration: underline dashed var(--color-amber-500);
+  text-underline-offset: 3px;
+}
+mark[data-annotation]:hover,
+mark[data-annotation]:focus-visible {
+  background: var(--color-amber-300);
+  outline: none;
 }
 
 /* Diff rendering */
@@ -265,9 +350,22 @@ mark[data-annotation] {
 .dark .prose-md a {
   color: var(--color-blue-400);
 }
+.dark .prose-md.docx .sh { background: var(--color-stone-800); }
+.dark .prose-md.docx .fig-missing {
+  background: color-mix(in srgb, var(--color-amber-400) 12%, transparent);
+  color: var(--color-amber-200);
+}
+.dark .prose-md.docx img { background: #fff; }
 .dark mark[data-annotation] {
   background: color-mix(in srgb, var(--color-amber-400) 30%, transparent);
   color: inherit;
+}
+.dark mark[data-annotation][data-kind="draft"] {
+  background: color-mix(in srgb, var(--color-amber-400) 15%, transparent);
+}
+.dark mark[data-annotation]:hover,
+.dark mark[data-annotation]:focus-visible {
+  background: color-mix(in srgb, var(--color-amber-400) 45%, transparent);
 }
 .dark .diff-add {
   background: var(--color-green-950);
@@ -295,4 +393,124 @@ mark[data-annotation] {
 @keyframes annot-flash-kf-dark {
   0%, 55% { outline-color: rgb(251 191 36); }
   100% { outline-color: transparent; }
+}
+
+/* Print / Save as PDF (v0.13, components/PrintManuscript.tsx). Off screen
+   the print copy is hidden; when printing, it is the only thing on the page,
+   black on white whatever the board's theme. */
+#print-root {
+  display: none;
+}
+@media print {
+  @page {
+    margin: 20mm 18mm;
+  }
+  html,
+  body {
+    background: #fff !important;
+  }
+  body > *:not(#print-root) {
+    display: none !important;
+  }
+  #print-root {
+    display: block;
+    --aict-prose-heading: #111;
+    --aict-prose-body: #111;
+    --aict-prose-muted: #444;
+    --aict-docx-rule: #222;
+    color: #111;
+    font-family: "Times New Roman", "Noto Serif KR", Batang, Georgia, serif;
+    font-size: 11pt;
+    line-height: 1.5;
+  }
+  #print-root .print-head {
+    margin-bottom: 8mm;
+    padding-bottom: 3mm;
+    border-bottom: 1px solid #999;
+    font-family: -apple-system, "Segoe UI", Roboto, sans-serif;
+  }
+  #print-root .print-title {
+    font-size: 10pt;
+    font-weight: 600;
+  }
+  #print-root .print-sub {
+    font-size: 8.5pt;
+    color: #555;
+  }
+  #print-root .prose-md {
+    color: #111;
+  }
+  #print-root h1,
+  #print-root h2,
+  #print-root h3,
+  #print-root h4 {
+    break-after: avoid;
+    color: #111;
+  }
+  #print-root .tbl {
+    overflow: visible;
+  }
+  #print-root table {
+    font-size: 9pt;
+  }
+  #print-root thead {
+    display: table-header-group; /* repeat the header row on every page */
+  }
+  #print-root tr,
+  #print-root img,
+  #print-root .math-display {
+    break-inside: avoid;
+  }
+  #print-root .prose-md img {
+    max-width: 100%;
+    border: 0;
+    padding: 0;
+  }
+  #print-root .prose-md a {
+    color: #111;
+  }
+  #print-root mark[data-annotation] {
+    background: #fde68a;
+    color: inherit;
+    text-decoration: underline;
+    text-decoration-color: #b45309;
+    outline: none;
+    -webkit-print-color-adjust: exact;
+    print-color-adjust: exact;
+  }
+  #print-root sup.print-ref {
+    font-size: 7pt;
+    font-weight: 600;
+    color: #92400e;
+    margin-left: 1px;
+  }
+  #print-root .print-comments {
+    margin-top: 10mm;
+    padding-top: 4mm;
+    border-top: 1px solid #999;
+    font-size: 9.5pt;
+  }
+  #print-root .print-comments h2 {
+    font-size: 12pt;
+    margin: 0 0 3mm;
+  }
+  #print-root .print-comments ol {
+    list-style: none;
+    padding-left: 0;
+  }
+  #print-root .print-comments li {
+    margin-bottom: 3mm;
+    break-inside: avoid;
+  }
+  #print-root .print-c-meta {
+    font-size: 8.5pt;
+    color: #555;
+  }
+  #print-root .print-comments blockquote {
+    margin: 1mm 0;
+    padding-left: 3mm;
+    border-left: 2px solid #ccc;
+    font-style: italic;
+    color: #444;
+  }
 }

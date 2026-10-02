@@ -8,13 +8,25 @@
 //      shape for "hosted" mode; Roster.tsx marks a drilled-into student's
 //      payload as mode "hosted" specifically so that code path fires
 //      unmodified here — see Roster.tsx's own comment on why.
+// PATCH  /api/comments?shareHash=&id= — instructor only: change a sent
+//      comment's text ({comment, category?}); stamps editedAt.
+// DELETE /api/comments?shareHash=&id= — instructor only: remove a comment.
+//      The middleware lets /api/comments through for students' bearer GET,
+//      so both methods check the instructor session here themselves.
 import type { VercelRequest, VercelResponse } from "@vercel/node";
 import { isAuthed, type HeaderBag } from "../lib/auth.js";
 import { SECURITY_HEADERS } from "../lib/gate.js";
-import { validateCommentBody } from "../lib/validate.js";
-import { putComment, listCommentsForShareHash, type StoredComment } from "../lib/comments.js";
+import { COMMENT_ID_RE, validateCommentBody, validateCommentPatch } from "../lib/validate.js";
+import {
+  deleteComment,
+  listCommentsForShareHash,
+  putComment,
+  updateComment,
+  type StoredComment,
+} from "../lib/comments.js";
 import { resolveToken } from "../lib/roster.js";
 import { resolveShareHashOwner } from "../lib/submissions.js";
+import { getRelease } from "../lib/release.js";
 
 export interface RunResult { status: number; json: unknown }
 
@@ -63,6 +75,10 @@ export async function run(
     // to this student via the server-written index before returning anything.
     const owner = await resolveShareHashOwner(blobToken, shareHash);
     if (owner !== studentId) return { status: 403, json: { error: "forbidden" } };
+    // Unreleased feedback is the instructor's work in progress — same rule as
+    // /api/my-comments.
+    const release = await getRelease(blobToken, shareHash);
+    if (!release?.releasedAt) return { status: 200, json: { comments: [] } };
     const comments = await listCommentsForShareHash(blobToken, shareHash);
     return { status: 200, json: { comments } };
   }
@@ -92,6 +108,28 @@ export async function run(
       return { status: 409, json: { error: "comment id already exists with different content" } };
     }
     return { status: 200, json: { ok: true, id: stored.id } };
+  }
+
+  if (method === "PATCH" || method === "DELETE") {
+    if (!instructor) return { status: 401, json: { error: "unauthorized" } };
+    const shareHash = firstQueryValue(query.shareHash);
+    const id = firstQueryValue(query.id);
+    if (!shareHash || shareHash.length > 200 || !id || !COMMENT_ID_RE.test(id)) {
+      return { status: 400, json: { error: "shareHash and a comment id are required" } };
+    }
+    if (method === "DELETE") {
+      await deleteComment(blobToken, shareHash, id);
+      return { status: 200, json: { ok: true, id } };
+    }
+    let parsed: unknown = body;
+    if (typeof body === "string") {
+      try { parsed = JSON.parse(body); } catch { return { status: 400, json: { error: "bad json" } }; }
+    }
+    const v = validateCommentPatch(parsed);
+    if (!v.ok) return { status: 400, json: { error: "invalid", detail: v.error } };
+    const updated = await updateComment(blobToken, shareHash, id, v.value, new Date(now * 1000).toISOString());
+    if (!updated) return { status: 404, json: { error: "not_found" } };
+    return { status: 200, json: { ok: true, comment: updated } };
   }
 
   return { status: 405, json: { error: "method not allowed" } };

@@ -98,6 +98,7 @@ GITIGNORE_LINES = [
     "/execution/.aict-approved-*",
     "/execution/*/results/.staging-*/",
     "/.board-web/",
+    "/.aict-history/",
     "/.board-web-inbox/",
     "/.board-web-pulled.json",
     "/.board-web-pulled.json.tmp",
@@ -258,54 +259,7 @@ MANUSCRIPT_FIGURE_MAX = 8 * 1024 * 1024
 _MD_IMAGE_RE = re.compile(r"!\[[^\]]*\]\(\s*(?:<([^>\n]+)>|([^\s)]+))")
 
 
-def _docx_image_rels(z):
-    """rId -> zip member ("word/media/image1.png") for embedded image parts.
-    External (linked) images and non-image parts are skipped."""
-    try:
-        rels_el = ET.fromstring(z.read("word/_rels/document.xml.rels"))
-    except (KeyError, ET.ParseError):
-        return {}
-    out = {}
-    for rel in rels_el.iter(_DOCX_REL_NS + "Relationship"):
-        if rel.get("TargetMode") == "External":
-            continue
-        target = (rel.get("Target") or "").lstrip("/")
-        if not target.startswith("word/"):
-            target = "word/" + target
-        if os.path.splitext(target)[1].lower() in MANUSCRIPT_FIGURE_EXTS:
-            out[rel.get("Id")] = target
-    return out
-
-
 _DOCX_M_NS = "{http://schemas.openxmlformats.org/officeDocument/2006/math}"
-
-
-def _docx_para_text(para):
-    """A paragraph's text in document order. Word equations (OMML) become
-    TeX the board's manuscript renderer typesets: `$…$` inline, `$$…$$` for
-    a display equation (m:oMathPara). Paragraphs without math produce exactly
-    the old w:t concatenation, so existing comment anchors keep matching."""
-    w, m = _DOCX_W_NS, _DOCX_M_NS
-    parts = []
-
-    def walk(el):
-        for child in el:
-            if child.tag == m + "oMathPara":
-                for om in child.iter(m + "oMath"):
-                    tex = _omml_to_tex(om).strip()
-                    if tex:
-                        parts.append("$$%s$$" % tex)
-            elif child.tag == m + "oMath":
-                tex = _omml_to_tex(child).strip()
-                if tex:
-                    parts.append("$%s$" % tex)
-            elif child.tag == w + "t":
-                parts.append(child.text or "")
-            else:
-                walk(child)
-
-    walk(para)
-    return "".join(parts)
 
 
 # --- OMML -> TeX -------------------------------------------------------------
@@ -454,58 +408,725 @@ def _omml_to_tex(el, in_array=False):
     return kids()
 
 
-def _extract_docx_text(p):
-    """Best-effort plain-text extraction from a .docx (an OOXML zip). Stdlib
-    only (zipfile + ElementTree) — deliberately NOT mammoth/pandoc: no extra
-    pip dependency, and board.py's Markdown renderer escapes raw HTML by
-    policy anyway, so there is nothing to gain from an HTML conversion.
-    Paragraphs styled Heading1-6 are prefixed with '#'*N so the manuscript
-    still gets a heading outline; anything unexpected in a paragraph's style
-    is treated as body text rather than raising. Embedded images become
-    `![](docx-media/<name>)` lines after their paragraph's text;
-    _docx_figure_assets supplies the bytes."""
+def _docx_to_html(p):
+    """A Word manuscript as compact, semantic HTML for the board — headings,
+    bold/italic/underline/strike/super/subscript, lists, tables (merged cells,
+    borders, column widths, header rows), footnotes/endnotes, hyperlinks,
+    equations (OMML -> TeX, typeset in the browser), figures at their Word
+    size, and text boxes. Stdlib only (zipfile + ElementTree).
+
+    Returns (html, assets): assets maps docx-media/<name> -> data: URI for the
+    figures the HTML references. Image bytes never go into the HTML itself —
+    only `src="docx-media/<name>"` — so submit.py can move them out of the
+    envelope (Vercel's 4.5 MB body cap). The HTML uses short class tokens and
+    no inline style (one exception: <col> widths); the board sanitizes it
+    against a fixed allowlist before rendering (board/src/lib/docxHtml.ts)."""
     with zipfile.ZipFile(p) as z:
-        xml_bytes = z.read("word/document.xml")
-        rels = _docx_image_rels(z)
-    root_el = ET.fromstring(xml_bytes)
+        return _DocxHtml(z).render()
+
+
+_DOCX_WP_NS = "{http://schemas.openxmlformats.org/drawingml/2006/wordprocessingDrawing}"
+_DOCX_MC_NS = "{http://schemas.openxmlformats.org/markup-compatibility/2006}"
+_DOCX_V_NS = "{urn:schemas-microsoft-com:vml}"
+_EMU_PER_PX = 9525
+_DOCX_FMT_ORDER = ("strong", "em", "u", "s", "sup", "sub")
+_DOCX_OL_TYPE = {"lowerLetter": "a", "upperLetter": "A", "lowerRoman": "i", "upperRoman": "I"}
+_DOCX_FIG_MISSING = {
+    "format": "[Figure not shown: EMF/WMF image — paste it into Word as PNG]",
+    "chart": "[Chart not shown: native Word chart — insert it as an image]",
+    "smartart": "[Diagram not shown: SmartArt — insert it as an image]",
+    "object": "[Embedded object not shown (e.g. a MathType equation) — use a Word equation or an image]",
+    "large": "[Figure omitted: larger than 8 MB]",
+    "linked": "[Linked figure not embedded in the file]",
+}
+_DOCX_LINK_RE = re.compile(r"(?:https?://|mailto:)\S+$", re.I)
+
+
+def _esc(s, quote=False):
+    s = s.replace("&", "&amp;").replace("<", "&lt;").replace(">", "&gt;")
+    return s.replace('"', "&quot;") if quote else s
+
+
+def _w_attr(el, name):
+    return el.get(_DOCX_W_NS + name) if el is not None else None
+
+
+def _w_toggle(rpr, name):
+    """A run toggle property: True/False when set on this rPr, else None."""
+    node = rpr.find(_DOCX_W_NS + name) if rpr is not None else None
+    if node is None:
+        return None
+    return (node.get(_DOCX_W_NS + "val") or "true").lower() not in ("0", "false", "off", "none")
+
+
+def _rpr_flags(rpr):
+    """Formatting flags an rPr sets explicitly (unset ones are absent)."""
+    if rpr is None:
+        return {}
     w = _DOCX_W_NS
-    lines = []
-    for para in root_el.iter(w + "p"):
-        text = _docx_para_text(para)
-        if text.strip():
-            level = 0
-            pstyle = para.find(f"{w}pPr/{w}pStyle")
-            if pstyle is not None:
-                val = pstyle.get(w + "val") or ""
-                m = re.fullmatch(r"Heading(\d)", val)
-                if m:
-                    level = min(int(m.group(1)), 6)
-            lines.append((("#" * level + " ") if level else "") + text)
-        for blip in para.iter(_DOCX_A_NS + "blip"):
-            target = rels.get(blip.get(_DOCX_R_NS + "embed"))
-            if target:
-                lines.append("![](%s%s)" % (DOCX_MEDIA_PREFIX, target.rsplit("/", 1)[-1]))
-    return "\n\n".join(lines)
+    f = {}
+    for tag, name in (("strong", "b"), ("em", "i"), ("hidden", "vanish")):
+        v = _w_toggle(rpr, name)
+        if v is not None:
+            f[tag] = v
+    u = rpr.find(w + "u")
+    if u is not None:
+        f["u"] = (u.get(w + "val") or "single") != "none"
+    strike = [_w_toggle(rpr, n) for n in ("strike", "dstrike")]
+    if any(v is not None for v in strike):
+        f["s"] = any(strike)
+    va = rpr.find(w + "vertAlign")
+    if va is not None:
+        val = va.get(w + "val")
+        f["sup"], f["sub"] = val == "superscript", val == "subscript"
+    return f
 
 
-def _docx_figure_assets(p):
-    """docx-media/<name> -> data: URI for every embedded image. Oversized
-    images are left out (they render as alt text, like any unresolved
-    figure)."""
-    assets = {}
-    with zipfile.ZipFile(p) as z:
-        for target in sorted(set(_docx_image_rels(z).values())):
+def _docx_side_on(borders, side):
+    """True/False when `borders` (a *Borders element) sets this side."""
+    if borders is None:
+        return None
+    w = _DOCX_W_NS
+    node = borders.find(w + side)
+    if node is None and side in ("left", "right"):
+        node = borders.find(w + ("start" if side == "left" else "end"))
+    if node is None:
+        return None
+    return (node.get(w + "val") or "nil") not in ("nil", "none")
+
+
+class _DocxStyles:
+    def __init__(self, z):
+        w = _DOCX_W_NS
+        self.by_id = {}
+        self.default_para = None
+        try:
+            root = ET.fromstring(z.read("word/styles.xml"))
+        except (KeyError, ET.ParseError):
+            return
+        for st in root.iter(w + "style"):
+            sid = st.get(w + "styleId")
+            if sid:
+                self.by_id[sid] = st
+                if st.get(w + "type") == "paragraph" and st.get(w + "default") in ("1", "true"):
+                    self.default_para = sid
+
+    def chain(self, sid):
+        """The style and its basedOn ancestors, nearest first."""
+        out, seen = [], set()
+        while sid and sid not in seen and sid in self.by_id and len(out) < 20:
+            seen.add(sid)
+            st = self.by_id[sid]
+            out.append(st)
+            sid = _w_attr(st.find(_DOCX_W_NS + "basedOn"), "val")
+        return out
+
+    def _name(self, st):
+        return (_w_attr(st.find(_DOCX_W_NS + "name"), "val") or "").strip().lower()
+
+    def heading_level(self, sid):
+        w = _DOCX_W_NS
+        for st in self.chain(sid):
+            name = self._name(st)
+            m = re.fullmatch(r"heading\s*(\d)", name)
+            if m:
+                return min(max(int(m.group(1)), 1), 6)
+            if name == "title":
+                return 1
+            lvl = _w_attr(st.find(w + "pPr/" + w + "outlineLvl"), "val")
+            if lvl and lvl.isdigit() and int(lvl) < 9:
+                return min(int(lvl) + 1, 6)
+        m = re.fullmatch(r"[Hh]eading(\d)", sid or "")
+        return min(int(m.group(1)), 6) if m else 0
+
+    def is_caption(self, sid):
+        return any(self._name(st) == "caption" for st in self.chain(sid))
+
+    def ppr(self, sid, path):
+        """The nearest style's pPr/<path> element, if any."""
+        w = _DOCX_W_NS
+        q = "/".join(w + seg for seg in ("pPr/" + path).split("/"))
+        for st in self.chain(sid):
+            node = st.find(q)
+            if node is not None:
+                return node
+        return None
+
+    def rpr_flags(self, sid):
+        """Run flags a (paragraph or character) style chain sets, ancestors first."""
+        f = {}
+        for st in reversed(self.chain(sid)):
+            f.update(_rpr_flags(st.find(_DOCX_W_NS + "rPr")))
+        return f
+
+    def table_borders(self, sid):
+        w = _DOCX_W_NS
+        out = {}
+        for st in reversed(self.chain(sid)):
+            b = st.find(w + "tblPr/" + w + "tblBorders")
+            for side in ("top", "bottom", "left", "right", "insideH", "insideV"):
+                v = _docx_side_on(b, side)
+                if v is not None:
+                    out[side] = v
+        return out
+
+    def cond_borders(self, sid, kind):
+        """tcBorders of a table style's conditional block (firstRow, lastRow)."""
+        w = _DOCX_W_NS
+        out = {}
+        for st in reversed(self.chain(sid)):
+            for c in st.findall(w + "tblStylePr"):
+                if c.get(w + "type") != kind:
+                    continue
+                b = c.find(w + "tcPr/" + w + "tcBorders")
+                for side in ("top", "bottom", "left", "right"):
+                    v = _docx_side_on(b, side)
+                    if v is not None:
+                        out[side] = v
+        return out
+
+
+class _DocxNumbering:
+    def __init__(self, z):
+        w = _DOCX_W_NS
+        self.num_to_abs = {}
+        self.levels = {}
+        try:
+            root = ET.fromstring(z.read("word/numbering.xml"))
+        except (KeyError, ET.ParseError):
+            return
+        for an in root.iter(w + "abstractNum"):
+            aid = an.get(w + "abstractNumId")
+            for lvl in an.findall(w + "lvl"):
+                fmt = _w_attr(lvl.find(w + "numFmt"), "val") or "decimal"
+                start = _w_attr(lvl.find(w + "start"), "val") or "1"
+                self.levels[(aid, lvl.get(w + "ilvl"))] = (
+                    fmt, int(start) if start.isdigit() else 1)
+        for n in root.iter(w + "num"):
+            self.num_to_abs[n.get(w + "numId")] = _w_attr(n.find(w + "abstractNumId"), "val")
+
+    def kind(self, num_id, ilvl):
+        """("ul"|"ol", type attr or None, start) for a list paragraph, else None."""
+        aid = self.num_to_abs.get(num_id)
+        if num_id in (None, "0") or aid is None:
+            return None
+        fmt, start = self.levels.get((aid, str(ilvl)), ("decimal", 1))
+        if fmt == "none":
+            return None
+        if fmt == "bullet":
+            return ("ul", None, 1)
+        return ("ol", _DOCX_OL_TYPE.get(fmt), start)
+
+
+class _DocxHtml:
+    def __init__(self, z):
+        self.z = z
+        self.styles = _DocxStyles(z)
+        self.numbering = _DocxNumbering(z)
+        self.doc_rels = self._load_rels("word/_rels/document.xml.rels")
+        self.rels = self.doc_rels
+        self.assets = {}
+        self.note_n = {}        # ("footnote"|"endnote", id) -> number
+        self.notes = {}         # (kind, id) -> element
+        for kind in ("footnote", "endnote"):
             try:
-                info = z.getinfo(target)
-            except KeyError:
+                root = ET.fromstring(z.read("word/%ss.xml" % kind))
+            except (KeyError, ET.ParseError):
                 continue
-            if info.file_size > MANUSCRIPT_FIGURE_MAX:
-                continue
-            name = target.rsplit("/", 1)[-1]
-            mime = INLINE_MIME[os.path.splitext(name)[1].lower()]
-            data = base64.b64encode(z.read(target)).decode("ascii")
-            assets[DOCX_MEDIA_PREFIX + name] = "data:%s;base64,%s" % (mime, data)
-    return assets
+            for n in root.findall(_DOCX_W_NS + kind):
+                if n.get(_DOCX_W_NS + "type") in (None, "normal"):
+                    self.notes[(kind, n.get(_DOCX_W_NS + "id"))] = n
+        self.list_counts = {}
+
+    def _load_rels(self, member):
+        try:
+            root = ET.fromstring(self.z.read(member))
+        except (KeyError, ET.ParseError):
+            return {}
+        out = {}
+        for rel in root.iter(_DOCX_REL_NS + "Relationship"):
+            external = rel.get("TargetMode") == "External"
+            target = rel.get("Target") or ""
+            if not external:
+                target = target.lstrip("/")
+                if not target.startswith("word/"):
+                    target = "word/" + target
+            out[rel.get("Id")] = (target, external)
+        return out
+
+    # ---- document ----------------------------------------------------------
+    def render(self):
+        body = ET.fromstring(self.z.read("word/document.xml")).find(_DOCX_W_NS + "body")
+        html = self.blocks(body) if body is not None else ""
+        if self.note_n:
+            items = []
+            # Rendering a note can reference another note; render until stable.
+            done = set()
+            while len(done) < len(self.note_n):
+                for key, n in sorted(self.note_n.items(), key=lambda kv: kv[1]):
+                    if key in done:
+                        continue
+                    done.add(key)
+                    self.rels = self._load_rels("word/_rels/%ss.xml.rels" % key[0])
+                    inner = self.blocks(self.notes[key])
+                    self.rels = self.doc_rels
+                    items.append((n, '<li id="fn-%d">%s</li>' % (n, inner)))
+            html += '<section class="footnotes"><ol>%s</ol></section>' % "".join(
+                h for _n, h in sorted(items))
+        return html, self.assets
+
+    def blocks(self, parent):
+        """Block-level children (paragraphs, tables) as HTML; runs of list
+        paragraphs are grouped into nested <ul>/<ol>."""
+        w = _DOCX_W_NS
+        out = []
+        stack = []  # [(tag, numId)] — every open list has an open <li>
+
+        def close_to(depth):
+            while len(stack) > depth:
+                out.append("</li></%s>" % stack.pop()[0])
+
+        def emit(el):
+            tag = el.tag
+            if tag == w + "p":
+                info = self.paragraph(el)
+                if info is None:
+                    return
+                html, lst, after = info
+                if lst is None:
+                    close_to(0)
+                    if html:
+                        out.append(html)
+                else:
+                    (ltag, ltype, start), num_id, depth = lst
+                    close_to(depth)  # back out of deeper levels
+                    if len(stack) == depth and stack[depth - 1] != (ltag, num_id):
+                        close_to(depth - 1)  # a different list at this level
+                    if len(stack) == depth:
+                        out.append("</li><li>%s" % html)
+                    else:
+                        while len(stack) < depth:
+                            attrs = ""
+                            if ltag == "ol":
+                                if ltype:
+                                    attrs += ' type="%s"' % ltype
+                                if start != 1:
+                                    attrs += ' start="%d"' % start
+                            out.append("<%s%s><li>" % (ltag, attrs))
+                            stack.append((ltag, num_id))
+                        out.append(html)
+                out.extend(after)
+            elif tag == w + "tbl":
+                close_to(0)
+                out.append(self.table(el))
+            elif tag in (w + "sdt",):
+                content = el.find(w + "sdtContent")
+                if content is not None:
+                    for c in content:
+                        emit(c)
+            elif tag == w + "customXml":
+                for c in el:
+                    emit(c)
+
+        for child in parent:
+            emit(child)
+        close_to(0)
+        return "".join(out)
+
+    # ---- paragraphs --------------------------------------------------------
+    def paragraph(self, el):
+        """(html, list-info or None, after-blocks) or None for nothing."""
+        w = _DOCX_W_NS
+        ppr = el.find(w + "pPr")
+        sid = _w_attr(ppr.find(w + "pStyle"), "val") if ppr is not None else None
+        sid = sid or self.styles.default_para
+        level = 0
+        direct_lvl = _w_attr(ppr.find(w + "outlineLvl"), "val") if ppr is not None else None
+        if direct_lvl and direct_lvl.isdigit() and int(direct_lvl) < 9:
+            level = min(int(direct_lvl) + 1, 6)
+        elif sid:
+            level = self.styles.heading_level(sid)
+        base = {} if level else (self.styles.rpr_flags(sid) if sid else {})
+        after = []
+        inner = self.inline(el, after, base)
+        if not inner.strip():
+            return ("", None, after) if after else None
+        if not re.sub(r"<[^>]+>", "", inner).strip() and not re.search(
+                r"<img|fig-missing|class=\"math", inner):
+            return ("", None, after) if after else None
+        jc = _w_attr(ppr.find(w + "jc"), "val") if ppr is not None else None
+        if jc is None and sid:
+            jc = _w_attr(self.styles.ppr(sid, "jc"), "val")
+        cls = []
+        if sid and self.styles.is_caption(sid):
+            cls.append("caption")
+        if jc == "center":
+            cls.append("ac")
+        elif jc in ("right", "end"):
+            cls.append("ar")
+        c = ' class="%s"' % " ".join(cls) if cls else ""
+        if level:
+            return ("<h%d%s>%s</h%d>" % (level, c, inner, level), None, after)
+        num = ppr.find(w + "numPr") if ppr is not None else None
+        if num is None and sid:
+            num = self.styles.ppr(sid, "numPr")
+        if num is not None:
+            num_id = _w_attr(num.find(w + "numId"), "val")
+            ilvl = _w_attr(num.find(w + "ilvl"), "val") or "0"
+            ilvl = int(ilvl) if ilvl.isdigit() else 0
+            kind = self.numbering.kind(num_id, ilvl)
+            if kind:
+                return (inner, (kind, num_id, min(ilvl, 8) + 1), after)
+        return ("<p%s>%s</p>" % (c, inner), None, after)
+
+    def inline(self, el, after, base):
+        segs = []
+        self.walk(el, segs, after, base)
+        # Merge neighbouring text of identical formatting (Word splits runs
+        # at every edit), then wrap each stretch in its tags once.
+        out, cur_fmt, buf = [], None, []
+
+        def flush():
+            if buf:
+                text = "".join(buf)
+                opened = "".join("<%s>" % t for t in cur_fmt)
+                closed = "".join("</%s>" % t for t in reversed(cur_fmt))
+                out.append(opened + _esc(text) + closed)
+                buf.clear()
+
+        for kind, val, fmt in segs:
+            if kind == "text":
+                if fmt != cur_fmt:
+                    flush()
+                    cur_fmt = fmt
+                buf.append(val)
+            else:
+                flush()
+                cur_fmt = None
+                out.append(val)
+        flush()
+        return "".join(out).strip()
+
+    def walk(self, el, segs, after, base):
+        w, m, mc = _DOCX_W_NS, _DOCX_M_NS, _DOCX_MC_NS
+        for ch in el:
+            t = ch.tag
+            if t == w + "r":
+                self.run(ch, segs, after, base)
+            elif t == w + "hyperlink":
+                target = self.rels.get(ch.get(_DOCX_R_NS + "id"))
+                inner = []
+                self.walk(ch, inner, after, base)
+                href = target[0] if target and target[1] else ""
+                if href and _DOCX_LINK_RE.match(href):
+                    segs.append(("raw", '<a href="%s">' % _esc(href, True), None))
+                    segs.extend(inner)
+                    segs.append(("raw", "</a>", None))
+                else:
+                    segs.extend(inner)
+            elif t in (w + "ins", w + "smartTag", w + "customXml", w + "fldSimple",
+                       w + "dir", w + "bdo", w + "moveTo"):
+                self.walk(ch, segs, after, base)
+            elif t == w + "sdt":
+                content = ch.find(w + "sdtContent")
+                if content is not None:
+                    self.walk(content, segs, after, base)
+            elif t == m + "oMathPara":
+                for om in ch.iter(m + "oMath"):
+                    self.math(om, segs, True)
+            elif t == m + "oMath":
+                self.math(ch, segs, False)
+            elif t == mc + "AlternateContent":
+                alt = ch.find(mc + "Choice")
+                if alt is None:
+                    alt = ch.find(mc + "Fallback")
+                if alt is not None:
+                    self.walk(alt, segs, after, base)
+            # pPr, bookmarks, w:del / w:moveFrom (deleted text), proofing
+            # marks, permissions: nothing to show.
+
+    def math(self, om, segs, display):
+        tex = _omml_to_tex(om).strip()
+        if tex:
+            segs.append(("raw", '<span class="math" data-tex="%s"%s></span>' % (
+                _esc(tex, True), ' data-display="1"' if display else ""), None))
+
+    def run(self, r, segs, after, base):
+        w = _DOCX_W_NS
+        rpr = r.find(w + "rPr")
+        f = dict(base)
+        if rpr is not None:
+            cs = _w_attr(rpr.find(w + "rStyle"), "val")
+            if cs:
+                f.update(self.styles.rpr_flags(cs))
+            f.update(_rpr_flags(rpr))
+        if f.get("hidden"):
+            return
+        fmt = tuple(t for t in _DOCX_FMT_ORDER if f.get(t))
+        self.run_children(r, segs, after, fmt)
+
+    def run_children(self, r, segs, after, fmt):
+        w, mc = _DOCX_W_NS, _DOCX_MC_NS
+        for ch in r:
+            t = ch.tag
+            if t == w + "t":
+                segs.append(("text", ch.text or "", fmt))
+            elif t in (w + "tab", w + "ptab"):
+                segs.append(("text", " ", fmt))
+            elif t in (w + "br", w + "cr"):
+                if ch.get(w + "type") not in ("page", "column"):
+                    segs.append(("raw", "<br>", None))
+            elif t == w + "noBreakHyphen":
+                segs.append(("text", "-", fmt))
+            elif t == w + "sym":
+                code = ch.get(w + "char") or ""
+                try:
+                    cp = int(code, 16)
+                except ValueError:
+                    continue
+                if not 0xF000 <= cp <= 0xF0FF:  # a symbol-font private glyph: no faithful mapping
+                    segs.append(("text", chr(cp), fmt))
+            elif t in (w + "footnoteReference", w + "endnoteReference"):
+                kind = "footnote" if t == w + "footnoteReference" else "endnote"
+                key = (kind, ch.get(w + "id"))
+                if key in self.notes:
+                    n = self.note_n.setdefault(key, len(self.note_n) + 1)
+                    segs.append(("raw", '<sup class="fn"><a href="#fn-%d" id="fnref-%d">%d</a></sup>'
+                                 % (n, n, n), None))
+            elif t == w + "drawing":
+                self.drawing(ch, segs, after)
+            elif t in (w + "pict", w + "object"):
+                self.vml(ch, segs, after, t == w + "object")
+            elif t == mc + "AlternateContent":
+                alt = ch.find(mc + "Choice")
+                if alt is None:
+                    alt = ch.find(mc + "Fallback")
+                if alt is not None:
+                    self.run_children(alt, segs, after, fmt)
+            # instrText (field codes, e.g. citation-manager JSON), delText,
+            # fldChar, lastRenderedPageBreak: not document text.
+
+    # ---- figures -----------------------------------------------------------
+    def missing(self, segs, why):
+        segs.append(("raw", '<span class="fig-missing">%s</span>' % _esc(_DOCX_FIG_MISSING[why]), None))
+
+    def drawing(self, d, segs, after):
+        wp, a = _DOCX_WP_NS, _DOCX_A_NS
+        holder = d.find(wp + "inline")
+        if holder is None:
+            holder = d.find(wp + "anchor")
+        cx = cy = 0
+        alt = ""
+        if holder is not None:
+            ext = holder.find(wp + "extent")
+            if ext is not None:
+                cx = int(ext.get("cx") or 0) if (ext.get("cx") or "").isdigit() else 0
+                cy = int(ext.get("cy") or 0) if (ext.get("cy") or "").isdigit() else 0
+            doc_pr = holder.find(wp + "docPr")
+            if doc_pr is not None:
+                alt = doc_pr.get("descr") or doc_pr.get("title") or ""
+        block = holder is not None and holder.tag == wp + "anchor"
+        blips = list(d.iter(a + "blip"))
+        if blips:
+            single = len(blips) == 1
+            for blip in blips:
+                self.image(blip.get(_DOCX_R_NS + "embed"), blip.get(_DOCX_R_NS + "link"),
+                           cx if single else 0, cy if single else 0, alt, block, segs)
+            return
+        txbx = list(d.iter(_DOCX_W_NS + "txbxContent"))
+        if txbx:
+            for t in txbx:
+                after.append(self.blocks(t))
+            return
+        gd = d.find(".//" + a + "graphicData")
+        uri = (gd.get("uri") or "") if gd is not None else ""
+        if uri.endswith("/chart") or "chart" in uri:
+            self.missing(segs, "chart")
+        elif "diagram" in uri:
+            self.missing(segs, "smartart")
+
+    def vml(self, el, segs, after, is_object):
+        txbx = list(el.iter(_DOCX_W_NS + "txbxContent"))
+        if txbx and not is_object:
+            for t in txbx:
+                after.append(self.blocks(t))
+            return
+        data = el.find(".//" + _DOCX_V_NS + "imagedata")
+        rid = data.get(_DOCX_R_NS + "id") if data is not None else None
+        target = self.rels.get(rid)
+        if is_object or target is None:
+            # An OLE object (MathType, an embedded sheet) shows only a
+            # Windows-metafile preview; a VML shape without an image is a
+            # drawing we cannot redraw.
+            if is_object:
+                self.missing(segs, "object")
+            return
+        self.image(rid, None, 0, 0, data.get(_DOCX_V_NS + "title") or "", True, segs)
+
+    def image(self, rid, link_rid, cx, cy, alt, block, segs):
+        target = self.rels.get(rid) if rid else None
+        if target is None or target[1]:
+            if link_rid or (target and target[1]):
+                self.missing(segs, "linked")
+            return
+        member = target[0]
+        ext = os.path.splitext(member)[1].lower()
+        if ext not in MANUSCRIPT_FIGURE_EXTS:
+            self.missing(segs, "format")
+            return
+        try:
+            info = self.z.getinfo(member)
+        except KeyError:
+            self.missing(segs, "linked")
+            return
+        if info.file_size > MANUSCRIPT_FIGURE_MAX:
+            self.missing(segs, "large")
+            return
+        key = DOCX_MEDIA_PREFIX + member.rsplit("/", 1)[-1]
+        if key not in self.assets:
+            self.assets[key] = "data:%s;base64,%s" % (
+                INLINE_MIME[ext], base64.b64encode(self.z.read(member)).decode("ascii"))
+        attrs = ' src="%s" alt="%s"' % (_esc(key, True), _esc(alt, True))
+        wpx, hpx = round(cx / _EMU_PER_PX), round(cy / _EMU_PER_PX)
+        if 0 < wpx <= 4000 and 0 < hpx <= 8000:
+            attrs += ' width="%d" height="%d"' % (wpx, hpx)
+        if block:
+            attrs += ' class="fig"'
+        segs.append(("raw", "<img%s>" % attrs, None))
+
+    # ---- tables ------------------------------------------------------------
+    def table(self, tbl):
+        w = _DOCX_W_NS
+        tpr = tbl.find(w + "tblPr")
+        sid = _w_attr(tpr.find(w + "tblStyle"), "val") if tpr is not None else None
+        borders = self.styles.table_borders(sid) if sid else {}
+        direct = tpr.find(w + "tblBorders") if tpr is not None else None
+        for side in ("top", "bottom", "left", "right", "insideH", "insideV"):
+            v = _docx_side_on(direct, side)
+            if v is not None:
+                borders[side] = v
+        look = tpr.find(w + "tblLook") if tpr is not None else None
+        first_on, last_on = True, False
+        if look is not None:
+            val = look.get(w + "val")
+            if look.get(w + "firstRow") is not None:
+                first_on = look.get(w + "firstRow") in ("1", "true", "on")
+                last_on = look.get(w + "lastRow") in ("1", "true", "on")
+            elif val:
+                try:
+                    bits = int(val, 16)
+                    first_on, last_on = bool(bits & 0x20), bool(bits & 0x40)
+                except ValueError:
+                    pass
+        first_b = self.styles.cond_borders(sid, "firstRow") if (sid and first_on) else {}
+        last_b = self.styles.cond_borders(sid, "lastRow") if (sid and last_on) else {}
+
+        grid_el = tbl.find(w + "tblGrid")
+        grid = []
+        if grid_el is not None:
+            for gc in grid_el.findall(w + "gridCol"):
+                v = gc.get(w + "w") or "0"
+                grid.append(int(v) if v.isdigit() else 0)
+
+        rows = []
+        for tr in tbl.findall(w + "tr"):
+            trpr = tr.find(w + "trPr")
+            col = 0
+            gb = _w_attr(trpr.find(w + "gridBefore"), "val") if trpr is not None else None
+            if gb and gb.isdigit():
+                col = int(gb)
+            header = trpr is not None and bool(_w_toggle(trpr, "tblHeader"))
+            cells = []
+            for tc in tr.findall(w + "tc"):
+                tcpr = tc.find(w + "tcPr")
+                span = _w_attr(tcpr.find(w + "gridSpan"), "val") if tcpr is not None else None
+                span = int(span) if span and span.isdigit() and int(span) > 0 else 1
+                vm = tcpr.find(w + "vMerge") if tcpr is not None else None
+                vmerge = None if vm is None else ("restart" if _w_attr(vm, "val") == "restart" else "continue")
+                cells.append({"tc": tc, "tcpr": tcpr, "col": col, "span": span,
+                              "vmerge": vmerge, "rowspan": 1, "skip": False})
+                col += span
+            rows.append({"cells": cells, "header": header})
+        ncols = max([len(grid)] + [c["col"] + c["span"] for r in rows for c in r["cells"]] + [1])
+
+        open_merge = {}
+        for r in rows:
+            seen_cols = set()
+            for c in r["cells"]:
+                seen_cols.add(c["col"])
+                if c["vmerge"] == "continue" and c["col"] in open_merge:
+                    open_merge[c["col"]]["rowspan"] += 1
+                    c["skip"] = True
+                elif c["vmerge"] == "restart":
+                    open_merge[c["col"]] = c
+                else:
+                    open_merge.pop(c["col"], None)
+            for k in [k for k in open_merge if k not in seen_cols]:
+                open_merge.pop(k)
+
+        n_head = 0
+        while n_head < len(rows) and rows[n_head]["header"]:
+            n_head += 1
+        last = len(rows) - 1
+
+        def cell_html(ri, c, tag):
+            col, span, rspan = c["col"], c["span"], c["rowspan"]
+            b = {
+                "top": borders.get("top" if ri == 0 else "insideH", False),
+                "bottom": borders.get("bottom" if ri + rspan - 1 >= last else "insideH", False),
+                "left": borders.get("left" if col == 0 else "insideV", False),
+                "right": borders.get("right" if col + span >= ncols else "insideV", False),
+            }
+            if ri == 0:
+                b.update(first_b)
+            if ri + rspan - 1 >= last and last > 0:
+                b.update(last_b)
+            tcb = c["tcpr"].find(w + "tcBorders") if c["tcpr"] is not None else None
+            for side in ("top", "bottom", "left", "right"):
+                v = _docx_side_on(tcb, side)
+                if v is not None:
+                    b[side] = v
+            cls = [k for k, side in (("bt", "top"), ("bb", "bottom"), ("bl", "left"), ("br", "right"))
+                   if b[side]]
+            shd = c["tcpr"].find(w + "shd") if c["tcpr"] is not None else None
+            fill = (_w_attr(shd, "fill") or "auto").lower()
+            if fill not in ("auto", "ffffff", "none"):
+                cls.append("sh")
+            inner = self.blocks(c["tc"])
+            # A single plain paragraph needs no <p> inside a cell; its
+            # alignment moves onto the cell.
+            m = re.fullmatch(r'<p(?: class="([a-z ]+)")?>((?:(?!<p[ >]).)*)</p>', inner, re.S)
+            if m:
+                inner = m.group(2)
+                cls.extend(x for x in (m.group(1) or "").split() if x in ("ac", "ar"))
+            attrs = ""
+            if span > 1:
+                attrs += ' colspan="%d"' % span
+            if rspan > 1:
+                attrs += ' rowspan="%d"' % rspan
+            if cls:
+                attrs += ' class="%s"' % " ".join(cls)
+            return "<%s%s>%s</%s>" % (tag, attrs, inner, tag)
+
+        out = ['<div class="tbl"><table>']
+        total = sum(grid)
+        if total > 0 and len(grid) == ncols:
+            out.append("<colgroup>%s</colgroup>" % "".join(
+                '<col style="width:%s%%">' % ("%.1f" % (100.0 * g / total)).rstrip("0").rstrip(".")
+                for g in grid))
+        for ri, r in enumerate(rows):
+            if ri == 0 and n_head:
+                out.append("<thead>")
+            if ri == n_head:
+                out.append("<tbody>")
+            tag = "th" if ri < n_head else "td"
+            out.append("<tr>%s</tr>" % "".join(cell_html(ri, c, tag) for c in r["cells"] if not c["skip"]))
+            if ri == n_head - 1:
+                out.append("</thead>")
+        if len(rows) > n_head:
+            out.append("</tbody>")
+        out.append("</table></div>")
+        return "".join(out)
 
 
 def manuscript_figure_files(root, manuscript):
@@ -548,7 +1169,7 @@ def _manuscript_figure_route(i, f):
 
 _MANUSCRIPT_CANDIDATES = [
     ("manuscript.md", "markdown"),
-    ("manuscript.docx", "docx-text"),
+    ("manuscript.docx", "docx-html"),
     ("manuscript.hwp", "unsupported"),
     ("manuscript.hwpx", "unsupported"),
 ]
@@ -556,8 +1177,8 @@ _MANUSCRIPT_CANDIDATES = [
 
 def _read_manuscript_file(root):
     """Finds plans/manuscript.{md,docx,hwp,hwpx} in that priority order.
-    Markdown is the encouraged path; docx is read via best-effort stdlib text
-    extraction; hwp/hwpx are surfaced as unsupported rather than guessed at —
+    Markdown is the encouraged path; docx is converted to sanitizable HTML
+    (_docx_to_html) so tables and formatting survive; hwp/hwpx are surfaced as unsupported rather than guessed at —
     there's no reliable stdlib-only parse path for the legacy binary format,
     and no sample file in this repo to validate an hwpx (zip/XML) attempt
     against. Returns None when no manuscript file exists at all."""
@@ -582,8 +1203,7 @@ def _read_manuscript_file(root):
             return entry
         # docx
         try:
-            content = _extract_docx_text(p)
-            docx_assets = _docx_figure_assets(p)
+            content, docx_assets = _docx_to_html(p)
         except (KeyError, zipfile.BadZipFile, ET.ParseError, OSError):
             return {
                 "path": rel,
@@ -593,14 +1213,7 @@ def _read_manuscript_file(root):
                         "or not a standard .docx). Write your manuscript in "
                         "plans/manuscript.md instead.",
             }
-        entry = {
-            "path": rel,
-            "content": content,
-            "format": "docx-text",
-            "note": "Converted from Word — text, equations and figures are shown, but "
-                    "formatting and tables are not preserved. Write directly "
-                    "in plans/manuscript.md for full fidelity.",
-        }
+        entry = {"path": rel, "content": content, "format": "docx-html"}
         if docx_assets:
             entry["assets"] = docx_assets
         return entry
@@ -2342,23 +2955,42 @@ def render_hosted_html(root):
     return inject(template_path().read_text(encoding="utf-8"), payload)
 
 
+def _render_shell(mode):
+    """The single-file board bundle with no embedded payload and its root div
+    marked data-aict-mode=<mode>, so board/src/main.tsx mounts that shell
+    (which fetches its data live) instead of the single-project board."""
+    html = template_path().read_text(encoding="utf-8")
+    marker = '<div id="root"></div>'
+    replacement = '<div id="root" data-aict-mode="%s"></div>' % mode
+    if html.count(marker) != 1:
+        die("board template's root div not found in the expected form — "
+            "reinstall the AITCW plugin")
+    return html.replace(marker, replacement, 1)
+
+
 def render_roster_html():
     """Render the classroom roster dashboard shell: the same single-file board
     bundle used everywhere else, but with no embedded payload — the roster
     shell (board/src/RosterApp.tsx) fetches /api/roster live from the
     classroom server instead of reading an injected <script id="board-data">
-    slot. The root div is marked data-aict-mode="roster" so
-    board/src/main.tsx mounts the roster shell instead of the single-project
-    board (see board/src/main.tsx's dataset check). This is the classroom
-    server's counterpart to render_hosted_html(); unlike that function, it
-    takes no project root and injects no payload."""
-    html = template_path().read_text(encoding="utf-8")
-    marker = '<div id="root"></div>'
-    replacement = '<div id="root" data-aict-mode="roster"></div>'
-    if html.count(marker) != 1:
-        die("board template's root div not found in the expected form — "
-            "reinstall the AITCW plugin")
-    return html.replace(marker, replacement, 1)
+    slot. This is the classroom server's counterpart to render_hosted_html();
+    unlike that function, it takes no project root and injects no payload."""
+    return _render_shell("roster")
+
+
+def render_student_board_html():
+    """Render the classroom server's /me/board page (me-board.html): the
+    student's read-only history board. board/src/StudentHistoryApp.tsx signs
+    in with the token /me already stored and fetches the student's own
+    released submission and comments. Written beside index.html."""
+    return _render_shell("student-history")
+
+
+def render_snapshot_html(payload):
+    """A self-contained read-only board for one past submission (payload in
+    "snapshot" mode, its comments under payload["snapshot"]) — what
+    /ait:check --open writes to plans/.aict-history/."""
+    return inject(template_path().read_text(encoding="utf-8"), payload)
 
 
 def materialize_web_dir(root):
@@ -3016,9 +3648,9 @@ def _doc_stale(root, a):
         if not p.is_file():
             return True  # target gone — definitely not current
         if t == "doc-comment" and a.get("view") == "manuscript" and p.suffix == ".docx":
-            # Must match collect_payload's extraction, not the raw file bytes —
-            # the client hashed the EXTRACTED text, not the docx binary.
-            content = _extract_docx_text(p)
+            # Must match collect_payload's conversion, not the raw file bytes —
+            # the client hashed the converted HTML, not the docx binary.
+            content = _docx_to_html(p)[0]
         else:
             content = p.read_text(encoding="utf-8", errors="replace")
         if t == "doc-comment" and a.get("view") == "reports":
@@ -3367,6 +3999,7 @@ def _valid_seed(s):
       - plan (default when scope absent): planPath, component, version, isDraft
       - master: no extra fields (anchors container-wide on the tracker)
       - results: component, resultsVersion
+      - manuscript: docKey (the manuscript path); optional occurrenceIndex
     """
     if not isinstance(s, dict):
         return False
@@ -3389,6 +4022,10 @@ def _valid_seed(s):
         return True
     if scope == "results":
         return isinstance(s.get("component"), str) and _is_int(s.get("resultsVersion"))
+    if scope == "manuscript":
+        return isinstance(s.get("docKey"), str) and (
+            "occurrenceIndex" not in s or _is_int(s.get("occurrenceIndex"))
+        )
     return False
 
 
