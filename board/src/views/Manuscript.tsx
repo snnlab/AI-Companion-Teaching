@@ -94,7 +94,7 @@ export default function Manuscript({
       data-annot-scope="manuscript"
       data-annot-section="manuscript"
     >
-      <Markdown source={manuscript.content} assets={manuscript.assets ?? NO_ASSETS} />
+      <Markdown source={manuscript.content} assets={manuscript.assets ?? NO_ASSETS} math />
     </section>
   );
 

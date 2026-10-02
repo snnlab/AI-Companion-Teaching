@@ -1,5 +1,21 @@
 # Changelog
 
+## [0.12.0] - 2026-10-02
+
+### Added
+- **Equations render in the Manuscript tab.** TeX in `plans/manuscript.md`
+  (`$…$` and `\(…\)` inline, `$$…$$` and `\[…\]` display, including
+  `aligned`/`cases` environments) is typeset with KaTeX instead of showing
+  as raw source with `_`/`*` mangled into italics. Output is MathML, laid out
+  natively by the browser, so the single-file board carries no extra fonts.
+  Dollar amounts in prose ("$5 to $10") stay text. Only the manuscript
+  renders math — plans and reports are unchanged.
+- **Word equations survive `.docx` manuscripts.** Equations built in Word's
+  equation editor (OMML) were silently dropped by the text extractor; they
+  are now converted to TeX and typeset like the Markdown ones. Paragraphs
+  without equations extract exactly as before, so existing comment anchors
+  on a Word manuscript still match.
+
 ## [0.11.0] - 2026-09-30
 
 ### Changed

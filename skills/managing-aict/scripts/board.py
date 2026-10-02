@@ -277,6 +277,183 @@ def _docx_image_rels(z):
     return out
 
 
+_DOCX_M_NS = "{http://schemas.openxmlformats.org/officeDocument/2006/math}"
+
+
+def _docx_para_text(para):
+    """A paragraph's text in document order. Word equations (OMML) become
+    TeX the board's manuscript renderer typesets: `$…$` inline, `$$…$$` for
+    a display equation (m:oMathPara). Paragraphs without math produce exactly
+    the old w:t concatenation, so existing comment anchors keep matching."""
+    w, m = _DOCX_W_NS, _DOCX_M_NS
+    parts = []
+
+    def walk(el):
+        for child in el:
+            if child.tag == m + "oMathPara":
+                for om in child.iter(m + "oMath"):
+                    tex = _omml_to_tex(om).strip()
+                    if tex:
+                        parts.append("$$%s$$" % tex)
+            elif child.tag == m + "oMath":
+                tex = _omml_to_tex(child).strip()
+                if tex:
+                    parts.append("$%s$" % tex)
+            elif child.tag == w + "t":
+                parts.append(child.text or "")
+            else:
+                walk(child)
+
+    walk(para)
+    return "".join(parts)
+
+
+# --- OMML -> TeX -------------------------------------------------------------
+# Covers what Word's equation editor produces in a typical social-science
+# manuscript: fractions, scripts, radicals, n-ary operators, delimiters,
+# functions, limits, accents, bars, braces, equation arrays and matrices.
+# Unicode symbols in runs pass through as-is (KaTeX reads ∑ α ≤ × directly);
+# only TeX-special ASCII is escaped. Unknown elements fall back to their
+# children, so nothing is silently dropped.
+
+_TEX_ESCAPES = {"\\": r"\backslash ", "{": r"\{", "}": r"\}", "#": r"\#",
+                "%": r"\%", "$": r"\$", "_": r"\_", "^": r"\text{\textasciicircum}", "~": r"\sim ",
+                "&": r"\&"}
+_TEX_FUNCS = {"sin", "cos", "tan", "cot", "sec", "csc", "sinh", "cosh", "tanh",
+              "arcsin", "arccos", "arctan", "log", "ln", "lg", "exp", "lim",
+              "max", "min", "sup", "inf", "det", "arg", "deg", "dim", "gcd",
+              "hom", "ker", "Pr", "liminf", "limsup"}
+_NARY = {"∑": r"\sum", "∏": r"\prod", "∐": r"\coprod", "∫": r"\int",
+         "∬": r"\iint", "∭": r"\iiint", "∮": r"\oint", "⋃": r"\bigcup",
+         "⋂": r"\bigcap", "⋁": r"\bigvee", "⋀": r"\bigwedge"}
+_DELIMS = {"(": "(", ")": ")", "[": "[", "]": "]", "{": r"\{", "}": r"\}",
+           "|": "|", "‖": r"\|", "⟨": r"\langle", "⟩": r"\rangle",
+           "〈": r"\langle", "〉": r"\rangle", "⌊": r"\lfloor", "⌋": r"\rfloor",
+           "⌈": r"\lceil", "⌉": r"\rceil", "": "."}
+_ACCENTS = {"̂": r"\hat", "̃": r"\tilde", "̄": r"\bar",
+            "̅": r"\overline", "̇": r"\dot", "̈": r"\ddot",
+            "⃗": r"\vec", "́": r"\acute", "̀": r"\grave",
+            "̆": r"\breve", "̌": r"\check", "‾": r"\overline",
+            "^": r"\hat", "~": r"\tilde", "¯": r"\bar"}
+
+
+def _omml_val(el, path, default=None):
+    """m:val of a property element (e.g. "m:fPr/m:type"), or default."""
+    m = _DOCX_M_NS
+    node = el.find("/".join(m + seg for seg in path.split("/")))
+    if node is None:
+        return default
+    return node.get(m + "val", default)
+
+
+def _omml_on(el, path):
+    return _omml_val(el, path, "off") in ("1", "on", "true")
+
+
+def _tex_func_name(tex):
+    t = tex.strip()
+    return "\\" + t if t in _TEX_FUNCS else t
+
+
+def _omml_to_tex(el, in_array=False):
+    """TeX for one OMML element (recursive)."""
+    m = _DOCX_M_NS
+    tag = el.tag[len(m):] if el.tag.startswith(m) else None
+
+    def sub(name, arr=in_array):
+        node = el.find(m + name)
+        return "" if node is None else _omml_to_tex(node, arr)
+
+    def kids(arr=in_array):
+        return "".join(_omml_to_tex(c, arr) for c in el)
+
+    if tag == "r":
+        text = "".join(t.text or "" for t in el.iter(m + "t"))
+        out = "".join("&" if (ch == "&" and in_array) else _TEX_ESCAPES.get(ch, ch)
+                      for ch in text)
+        if el.find(m + "rPr/" + m + "nor") is not None and text.strip():
+            return r"\text{%s}" % out
+        if _omml_val(el, "rPr/sty") == "p" and len(text.strip()) > 1:
+            return r"\mathrm{%s}" % out
+        return out
+    if tag == "f":
+        num, den = sub("num"), sub("den")
+        kind = _omml_val(el, "fPr/type", "bar")
+        if kind in ("lin", "skw"):
+            return "{%s}/{%s}" % (num, den)
+        if kind == "noBar":
+            return r"\genfrac{}{}{0pt}{}{%s}{%s}" % (num, den)
+        return r"\frac{%s}{%s}" % (num, den)
+    if tag == "sSup":
+        return "{%s}^{%s}" % (sub("e"), sub("sup"))
+    if tag == "sSub":
+        return "{%s}_{%s}" % (sub("e"), sub("sub"))
+    if tag == "sSubSup":
+        return "{%s}_{%s}^{%s}" % (sub("e"), sub("sub"), sub("sup"))
+    if tag == "sPre":
+        return "{}_{%s}^{%s}{%s}" % (sub("sub"), sub("sup"), sub("e"))
+    if tag == "rad":
+        deg = sub("deg")
+        if _omml_on(el, "radPr/degHide") or not deg.strip():
+            return r"\sqrt{%s}" % sub("e")
+        return r"\sqrt[%s]{%s}" % (deg, sub("e"))
+    if tag == "nary":
+        chr_ = _omml_val(el, "naryPr/chr", "∫")
+        op = _NARY.get(chr_, chr_)
+        if not _omml_on(el, "naryPr/subHide") and sub("sub").strip():
+            op += "_{%s}" % sub("sub")
+        if not _omml_on(el, "naryPr/supHide") and sub("sup").strip():
+            op += "^{%s}" % sub("sup")
+        return "%s{%s}" % (op, sub("e"))
+    if tag == "d":
+        beg = _DELIMS.get(_omml_val(el, "dPr/begChr", "("), None)
+        end = _DELIMS.get(_omml_val(el, "dPr/endChr", ")"), None)
+        sep = _omml_val(el, "dPr/sepChr", "|")
+        sep = _DELIMS.get(sep, sep)
+        inner = (r" \middle%s " % sep if sep in ("|", r"\|") else " %s " % sep).join(
+            _omml_to_tex(e, in_array) for e in el.findall(m + "e"))
+        if beg is None or end is None:  # an exotic bracket char: no \left/\right
+            return "%s%s%s" % (_omml_val(el, "dPr/begChr", "("), inner,
+                               _omml_val(el, "dPr/endChr", ")"))
+        return r"\left%s %s \right%s" % (beg, inner, end)
+    if tag == "func":
+        return "%s{%s}" % (_tex_func_name(sub("fName")), sub("e"))
+    if tag == "limLow":
+        base = sub("e")
+        if base.strip() in _TEX_FUNCS:
+            return "%s_{%s}" % (_tex_func_name(base), sub("lim"))
+        return r"\underset{%s}{%s}" % (sub("lim"), base)
+    if tag == "limUpp":
+        return r"\overset{%s}{%s}" % (sub("lim"), sub("e"))
+    if tag == "acc":
+        cmd = _ACCENTS.get(_omml_val(el, "accPr/chr", "̂"), r"\hat")
+        return "%s{%s}" % (cmd, sub("e"))
+    if tag == "bar":
+        top = _omml_val(el, "barPr/pos", "bot") == "top"
+        return "%s{%s}" % (r"\overline" if top else r"\underline", sub("e"))
+    if tag == "groupChr":
+        chr_ = _omml_val(el, "groupChrPr/chr", "⏟")
+        top = _omml_val(el, "groupChrPr/pos", "bot") == "top"
+        if chr_ == "⏟":
+            return r"\underbrace{%s}" % sub("e")
+        if chr_ == "⏞":
+            return r"\overbrace{%s}" % sub("e")
+        return r"%s{%s}{%s}" % (r"\overset" if top else r"\underset", chr_, sub("e"))
+    if tag == "borderBox":
+        return r"\boxed{%s}" % sub("e")
+    if tag == "eqArr":
+        rows = [_omml_to_tex(e, True) for e in el.findall(m + "e")]
+        env = "aligned" if any("&" in r for r in rows) else "gathered"
+        return r"\begin{%s}%s\end{%s}" % (env, r" \\ ".join(rows), env)
+    if tag == "m":
+        rows = [" & ".join(_omml_to_tex(e) for e in mr.findall(m + "e"))
+                for mr in el.findall(m + "mr")]
+        return r"\begin{matrix}%s\end{matrix}" % r" \\ ".join(rows)
+    if tag and tag.endswith("Pr"):  # property bags carry no content
+        return ""
+    return kids()
+
+
 def _extract_docx_text(p):
     """Best-effort plain-text extraction from a .docx (an OOXML zip). Stdlib
     only (zipfile + ElementTree) — deliberately NOT mammoth/pandoc: no extra
@@ -294,7 +471,7 @@ def _extract_docx_text(p):
     w = _DOCX_W_NS
     lines = []
     for para in root_el.iter(w + "p"):
-        text = "".join(node.text or "" for node in para.iter(w + "t"))
+        text = _docx_para_text(para)
         if text.strip():
             level = 0
             pstyle = para.find(f"{w}pPr/{w}pStyle")
@@ -420,7 +597,7 @@ def _read_manuscript_file(root):
             "path": rel,
             "content": content,
             "format": "docx-text",
-            "note": "Converted from Word — text and figures are shown, but "
+            "note": "Converted from Word — text, equations and figures are shown, but "
                     "formatting and tables are not preserved. Write directly "
                     "in plans/manuscript.md for full fidelity.",
         }

@@ -3504,6 +3504,74 @@ class TestExtractDocxText(unittest.TestCase):
             self.assertEqual(m["format"], "unsupported")
 
 
+class TestDocxEquations(unittest.TestCase):
+    """Word equations (OMML) become TeX the manuscript tab typesets."""
+
+    _W = "http://schemas.openxmlformats.org/wordprocessingml/2006/main"
+    _M = "http://schemas.openxmlformats.org/officeDocument/2006/math"
+
+    def _text(self, body_xml):
+        xml = (f'<w:document xmlns:w="{self._W}" xmlns:m="{self._M}"><w:body>'
+               f'{body_xml}</w:body></w:document>')
+        buf = io.BytesIO()
+        with zipfile.ZipFile(buf, "w") as z:
+            z.writestr("word/document.xml", xml)
+        with tempfile.TemporaryDirectory() as d:
+            p = Path(d) / "m.docx"
+            p.write_bytes(buf.getvalue())
+            return board._extract_docx_text(p)
+
+    @staticmethod
+    def _r(t):
+        return f"<m:r><m:t>{t}</m:t></m:r>"
+
+    def test_inline_equation_sits_in_its_sentence(self):
+        r = self._r
+        out = self._text(
+            '<w:p><w:r><w:t xml:space="preserve">Let </w:t></w:r>'
+            f'<m:oMath><m:sSub><m:e>{r("β")}</m:e><m:sub>{r("1")}</m:sub></m:sSub></m:oMath>'
+            '<w:r><w:t xml:space="preserve"> be the slope.</w:t></w:r></w:p>')
+        self.assertEqual(out, "Let ${β}_{1}$ be the slope.")
+
+    def test_display_equation_fraction_nary_delims(self):
+        r = self._r
+        out = self._text(
+            '<w:p><m:oMathPara><m:oMath>'
+            f'{r("y=")}<m:f><m:num>{r("a")}</m:num><m:den>{r("b")}</m:den></m:f>'
+            f'{r("+")}<m:nary><m:naryPr><m:chr m:val="∑"/></m:naryPr>'
+            f'<m:sub>{r("i=1")}</m:sub><m:sup>{r("n")}</m:sup>'
+            f'<m:e><m:d><m:e>{r("x")}</m:e></m:d></m:e></m:nary>'
+            '</m:oMath></m:oMathPara></w:p>')
+        self.assertEqual(
+            out, r"$$y=\frac{a}{b}+\sum_{i=1}^{n}{\left( x \right)}$$")
+
+    def test_sqrt_func_limits_accent_and_escapes(self):
+        r = self._r
+        out = self._text(
+            '<w:p><m:oMath>'
+            f'<m:rad><m:radPr><m:degHide m:val="1"/></m:radPr><m:deg/><m:e>{r("x")}</m:e></m:rad>'
+            f'<m:func><m:fName>{r("log")}</m:fName><m:e>{r("n")}</m:e></m:func>'
+            f'<m:func><m:fName><m:limLow><m:e>{r("lim")}</m:e><m:lim>{r("n→∞")}</m:lim>'
+            f'</m:limLow></m:fName><m:e>{r("a")}</m:e></m:func>'
+            f'<m:acc><m:e>{r("y")}</m:e></m:acc>{r("50%")}'
+            '</m:oMath></w:p>')
+        self.assertEqual(
+            out, r"$\sqrt{x}\log{n}\lim_{n→∞}{a}\hat{y}50\%$")
+
+    def test_equation_array_keeps_alignment(self):
+        r = self._r
+        out = self._text(
+            f'<w:p><m:oMathPara><m:oMath><m:eqArr><m:e>{r("a&amp;=b")}</m:e>'
+            f'<m:e>{r("c&amp;=d")}</m:e></m:eqArr></m:oMath></m:oMathPara></w:p>')
+        self.assertEqual(
+            out, "$$\\begin{aligned}a&=b \\\\ c&=d\\end{aligned}$$")
+
+    def test_paragraph_without_math_is_unchanged(self):
+        out = self._text('<w:p><w:r><w:t>Plain </w:t></w:r>'
+                         '<w:r><w:t>text.</w:t></w:r></w:p>')
+        self.assertEqual(out, "Plain text.")
+
+
 class TestLauncherScript(unittest.TestCase):
     """The generated aict-board launcher text and its shell-injection safety."""
 

@@ -165,6 +165,53 @@ pre {
   color: var(--color-blue-700);
   text-decoration: underline;
 }
+/* Manuscript math: KaTeX MathML output, laid out natively by the browser.
+   A math font is named explicitly — the platform fallback for <math> is
+   often a plain text face that mis-sizes radicals and big operators. */
+.prose-md math {
+  font-family: "Cambria Math", "STIX Two Math", "Latin Modern Math", math;
+  font-size: 1.1em;
+}
+.prose-md .math-display {
+  display: block;
+  margin: 1rem 0;
+  overflow-x: auto;
+  overflow-y: hidden;
+}
+.prose-md .math-display math {
+  display: block math;
+}
+/* MathML Core (Chrome) ignores mtable's columnalign/columnspacing attributes
+   and centers every cell, so aligned/cases environments lose their
+   alignment. Re-apply what KaTeX asked for: aligned = alternating
+   right|left pairs with no gap inside a pair; cases/array = left. */
+.prose-md mtable[columnalign^="right left"] > mtr > mtd {
+  padding-left: 0;
+  padding-right: 0;
+}
+/* Chrome's math layout ignores text-align and packs cell content at the
+   inline start; an rtl cell with ltr content right-aligns without mirroring
+   the formula itself. */
+.prose-md mtable[columnalign^="right left"] > mtr > mtd:nth-child(odd) {
+  text-align: right;
+  direction: rtl;
+}
+.prose-md mtable[columnalign^="right left"] > mtr > mtd:nth-child(odd) > * {
+  direction: ltr;
+}
+.prose-md mtable[columnalign^="right left"] > mtr > mtd:nth-child(even) {
+  text-align: left;
+}
+.prose-md mtable[columnalign^="right left"] > mtr > mtd:nth-child(odd):not(:first-child) {
+  padding-left: 1em;
+}
+.prose-md mtable[columnalign^="left"] > mtr > mtd {
+  text-align: left;
+}
+.prose-md .katex-error {
+  font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  font-size: 0.875em;
+}
 mark[data-annotation] {
   background: var(--color-amber-200);
   padding: 0 0.1rem;

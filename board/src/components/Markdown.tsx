@@ -1,6 +1,7 @@
 import { memo, useMemo } from "react";
 import { Marked } from "marked";
 import { unwrapSoftBreaks } from "../lib/markdownText";
+import { mathExtension } from "../lib/math";
 
 // HTML policy: comments are stripped; any other raw HTML in artifacts is
 // ESCAPED, never executed — a committed/shared board.html must be inert even
@@ -38,8 +39,8 @@ function safeDecode(s: string): string {
 // Hard-wrapped paragraphs are soft-unwrapped BEFORE parsing (v0.11), so
 // sentence continuations flow to the container width while the intentional
 // line-oriented breaks above survive. See lib/markdownText.ts.
-function makeMarked(assets?: Record<string, string>) {
-  return new Marked({
+function makeMarked(assets?: Record<string, string>, math = false) {
+  const m = new Marked({
     gfm: true,
     breaks: true,
     renderer: {
@@ -80,6 +81,10 @@ function makeMarked(assets?: Record<string, string>) {
         : {}),
     },
   });
+  // Opt-in: only the manuscript renders TeX. Plans and reports talk about
+  // money and shell variables far more often than they typeset formulas.
+  if (math) m.use(mathExtension);
+  return m;
 }
 
 const defaultMarked = makeMarked();
@@ -95,15 +100,17 @@ function Markdown({
   source,
   className = "",
   assets,
+  math = false,
 }: {
   source: string;
   className?: string;
   assets?: Record<string, string>;
+  math?: boolean;
 }) {
   const html = useMemo(() => {
-    const m = assets ? makeMarked(assets) : defaultMarked;
+    const m = assets || math ? makeMarked(assets, math) : defaultMarked;
     return m.parse(unwrapSoftBreaks(source)) as string;
-  }, [source, assets]);
+  }, [source, assets, math]);
   return (
     <div
       className={`prose-md ${className}`}
