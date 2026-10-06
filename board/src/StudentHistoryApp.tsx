@@ -213,7 +213,7 @@ export default function StudentHistoryApp() {
       >
         <a
           className="inline-block rounded-md border border-stone-300 dark:border-stone-600 px-2.5 py-1 text-xs font-medium text-stone-700 dark:text-stone-300 hover:border-stone-500"
-          href="/me"
+          href={`/me#v${numbers[current.shareHash]}`}
         >
           ← My feedback
         </a>

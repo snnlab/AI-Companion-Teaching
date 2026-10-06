@@ -175,6 +175,8 @@ describe("StudentHistoryApp (/me/board)", () => {
     expect((await screen.findByTestId("version-heading")).textContent).toBe("Version 3 of 3");
     expect(await screen.findByText(/Version 3 · Read-only copy/)).toBeTruthy();
     expect(screen.getByText(/1 version is waiting for review/)).toBeTruthy();
+    // Back to the same version's page on /me.
+    expect(screen.getByRole("link", { name: "← My feedback" }).getAttribute("href")).toBe("/me#v3");
     const select = screen.getByRole("combobox", { name: "Reviewed version" }) as HTMLSelectElement;
     // The unreviewed V2 is not offered.
     expect(Array.from(select.options).map((o) => o.textContent)).toEqual([

@@ -1,5 +1,23 @@
 # Changelog
 
+## [0.15.2] - 2026-10-06
+
+**Instructors: redeploy the classroom server** (refresh `me.html` from
+`classroom-template/`, regenerate `me-board.html`, then `--deploy`).
+
+### Changed
+- **`/me` is laid out like the instructor's roster.** A left panel lists
+  **All feedback** and every version (Version N, submitted date, and a
+  Waiting / New / Reviewed badge).
+  - **All feedback** shows every comment sent so far, newest first. Each
+    comment is tagged with its version and links to its place on the board.
+  - **Selecting a version** shows its dates, its comments, and an **Open
+    Version N** button to its board.
+  - **A waiting version** says it has not been reviewed yet.
+  - The selection is in the address (`/me#v2`), so Back and bookmarks work,
+    and the board's "← My feedback" returns to the same version. On a phone
+    the panel sits above the content.
+
 ## [0.15.1] - 2026-10-06
 
 **Instructors: redeploy the classroom server** (refresh `me.html` from
