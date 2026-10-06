@@ -63,14 +63,18 @@ export async function run(
 
   if (method === "GET") {
     let studentId = q(query, "student");
-    if (!isAuthed({ BOARD_SESSION_SECRET: env.BOARD_SESSION_SECRET }, headers, now)) {
-      // A student may read back their OWN files (the history board): files
-      // are stored per uploader, so the token's owner is the only student id
-      // a bearer caller ever reaches — the query's `student` is ignored.
+    const instructor = isAuthed({ BOARD_SESSION_SECRET: env.BOARD_SESSION_SECRET }, headers, now);
+    // A student may read back their OWN files (the history board): files are
+    // stored per uploader, so the token's owner is the only student id a
+    // bearer caller ever reaches — the query's `student` is ignored. The
+    // history board names no student, so a request without one is the
+    // student's even when the browser also holds an instructor session (an
+    // instructor checking /me/board as a student in their own browser).
+    if (!instructor || !studentId) {
       const token = bearerToken(headers);
       const owner = token ? await resolveToken(blobToken, env.ROSTER_TOKEN_PEPPER ?? "", token) : null;
-      if (!owner) return { status: 401, json: { error: "unauthorized" } };
-      studentId = owner;
+      if (owner) studentId = owner;
+      else if (!instructor) return { status: 401, json: { error: "unauthorized" } };
     }
     const sha = q(query, "sha");
     const part = intParam(query, "part");

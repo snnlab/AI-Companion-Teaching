@@ -1,5 +1,18 @@
 # Changelog
 
+## [0.15.3] - 2026-10-06
+
+**Instructors: redeploy the classroom server** (refresh `api/` from
+`classroom-template/`, regenerate `me-board.html`, then `--deploy`).
+
+### Fixed
+- **Figures missing on the student's version board when the browser was
+  also signed in as the instructor.** `/api/assets` saw the instructor
+  cookie, took the request for the instructor's, and refused it, because the
+  history board names no student. A request that names no student now uses
+  the student token it carries. The history board also stops sending cookies
+  with its figure downloads.
+
 ## [0.15.2] - 2026-10-06
 
 **Instructors: redeploy the classroom server** (refresh `me.html` from

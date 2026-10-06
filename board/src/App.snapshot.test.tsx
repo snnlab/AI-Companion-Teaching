@@ -144,6 +144,41 @@ describe("StudentHistoryApp (/me/board)", () => {
     expect(new URL(location.href).searchParams.get("key")).toBe(KEY);
   });
 
+  it("downloads figures with the token only, never the browser's cookies", async () => {
+    // An instructor session in the same browser would otherwise make the
+    // server treat the request as the instructor's (which names a student).
+    localStorage.setItem(ME_TOKEN_KEY, "tok-alice");
+    const SHA = "a".repeat(64);
+    const withFigure = payload();
+    withFigure.files.manuscript!.content = "# Paper\n\n![Figure 1](fig1.png)\n";
+    withFigure.files.manuscript!.assets = { "fig1.png": `aict-asset:${SHA}` };
+    (withFigure as unknown as { externalAssets: unknown }).externalAssets = { [SHA]: { mime: "image/png", size: 3, parts: 1 } };
+    const assetCalls: RequestInit[] = [];
+    vi.stubGlobal("URL", Object.assign(URL, { createObjectURL: () => "blob:fig1" }));
+    vi.stubGlobal("fetch", vi.fn(async (url: string, init?: RequestInit) => {
+      if (url === "/api/my-comments") {
+        return { ok: true, status: 200, json: async () => ({ studentId: "alice", comments: [], submissions: [
+          { shareHash: KEY, submittedAt: "2026-09-29T23:40:00+09:00", releasedAt: "2026-10-01T04:00:00.000Z" }] }) };
+      }
+      if (url.startsWith("/api/my-submission?")) {
+        return { ok: true, status: 200, json: async () => ({ submittedAt: "2026-09-29T23:40:00+09:00", releasedAt: "x", payload: withFigure }) };
+      }
+      if (url.startsWith("/api/assets?")) {
+        assetCalls.push(init ?? {});
+        return { ok: true, status: 200, arrayBuffer: async () => new Uint8Array([1, 2, 3]).buffer };
+      }
+      throw new Error(`unexpected ${url}`);
+    }) as unknown as typeof fetch);
+
+    render(<StudentHistoryApp />);
+    await screen.findByText(/Read-only copy of your submission/);
+    expect(assetCalls).toHaveLength(1);
+    expect(assetCalls[0].credentials).toBe("omit");
+    expect((assetCalls[0].headers as Record<string, string>).Authorization).toBe("Bearer tok-alice");
+    fireEvent.click(screen.getByRole("button", { name: "Manuscript" }));
+    await waitFor(() => expect(document.querySelector('img[src="blob:fig1"]')).not.toBeNull());
+  });
+
   it("numbers versions among all submissions and switches between reviewed ones only", async () => {
     localStorage.setItem(ME_TOKEN_KEY, "tok-alice");
     const V1 = "1111111111111111", V2 = "2222222222222222", V3 = "3333333333333333";

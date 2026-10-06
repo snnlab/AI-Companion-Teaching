@@ -36,8 +36,12 @@ function readToken(): string | null {
 function bearerFetchPart(token: string): FetchPart {
   return async (sha, part) => {
     const qs = new URLSearchParams({ sha, part: String(part) });
+    // No cookies: an instructor session in this browser (an instructor
+    // checking the student view) must not turn this into an instructor
+    // request, which needs a student name the history board doesn't send.
     const res = await fetch(`/api/assets?${qs.toString()}`, {
       headers: { Authorization: `Bearer ${token}` },
+      credentials: "omit",
     });
     if (!res.ok) throw new Error(`asset ${sha} part ${part}: HTTP ${res.status}`);
     return res.arrayBuffer();

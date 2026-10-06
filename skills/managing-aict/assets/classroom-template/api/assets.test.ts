@@ -115,4 +115,18 @@ describe("GET /api/assets", () => {
     expect(r.bytes?.toString()).toBe("figure");
     expect((await run("GET", cookie, { ...q, sha: sha(Buffer.from("nope")) }, Buffer.alloc(0), ENV, NOW)).status).toBe(404);
   });
+
+  it("serves the student's own file when the browser also holds an instructor session", async () => {
+    // An instructor opening /me/board as a student in the same browser: the
+    // history board sends the token and names no student.
+    const mine = Buffer.from("my-figure");
+    store.set(`assets/alice/${sha(mine)}/0`, mine);
+    const both = { ...BEARER, cookie: `instructor_session=${signCookie(SECRET, NOW, 3600)}` };
+    const r = await run("GET", both, { sha: sha(mine), part: "0" }, Buffer.alloc(0), ENV, NOW);
+    expect(r.status).toBe(200);
+    expect(r.bytes?.toString()).toBe("my-figure");
+    // an instructor request naming no student and carrying no token is still malformed
+    const cookieOnly = { cookie: both.cookie };
+    expect((await run("GET", cookieOnly, { sha: sha(mine), part: "0" }, Buffer.alloc(0), ENV, NOW)).status).toBe(400);
+  });
 });
