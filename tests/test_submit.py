@@ -493,8 +493,11 @@ def _docx(path, text, mtime):
 
 
 def _run_submit(root, *args, env_extra=None):
-    """submit.py in a subprocess on a cp949 console (Korean Windows)."""
-    env = {**os.environ, "PYTHONIOENCODING": "cp949", "AICT_NO_BOARD": "1"}
+    """submit.py in a subprocess on a cp949 console (Korean Windows). Its
+    plugin data (the saved classroom URL/token) goes under the project, never
+    into the real ~/.aict."""
+    env = {**os.environ, "PYTHONIOENCODING": "cp949", "AICT_NO_BOARD": "1",
+           "CLAUDE_PLUGIN_DATA": str(Path(root) / ".plugin-data")}
     env.pop("PYTHONUTF8", None)
     env.update(env_extra or {})
     return subprocess.run(

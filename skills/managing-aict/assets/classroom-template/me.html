@@ -12,7 +12,7 @@
     font: 15px/1.6 system-ui, -apple-system, "Segoe UI", Roboto, "Noto Sans KR", sans-serif;
     margin: 0; background: #f6f7f9; color: #1c1917;
   }
-  main { max-width: 720px; margin: 0 auto; padding: 1.5rem 1rem .5rem; }
+  main { max-width: 720px; margin: 0 auto; padding: .75rem 1rem .5rem; }
   #pushbar { max-width: 720px; margin: 0 auto 4rem; padding: 0 1rem; }
   h1 { font-size: 1.25rem; margin: 0 0 .25rem; }
   .muted { color: #78716c; font-size: .9rem; }
@@ -76,9 +76,23 @@
   .card.waiting { background: #fafaf9; box-shadow: none; }
   .card.waiting .sub-head { margin-bottom: 0; }
   .wait { background: #f5f5f4; color: #57534e; border-color: #e7e5e4; }
+  #topbar { max-width: 720px; margin: 0 auto; padding: 1rem 1rem 0; }
+  #topbar:empty { display: none; }
+  .topbar { display: flex; flex-wrap: wrap; align-items: center; gap: .5rem; justify-content: flex-end; }
+  .topbar button { font-size: .85rem; padding: .45rem .85rem; }
+  .topbar button.plain { background: #fff; color: #1c1917; border: 1px solid #d6d3d1; }
+  .topbar .pill {
+    font-size: .8rem; color: #15803d; background: #f0fdf4; border: 1px solid #bbf7d0;
+    border-radius: 999px; padding: .3rem .7rem;
+  }
+  .topbar .msg { flex-basis: 100%; text-align: right; font-size: .8rem; color: #b91c1c; }
+  .topbar .msg:empty { display: none; }
+  .sub-head a.title { color: inherit; text-decoration: none; }
+  .sub-head a.title:hover { text-decoration: underline; }
 </style>
 </head>
 <body>
+<div id="topbar"></div>
 <main id="app"><p class="muted">Loading…</p></main>
 <div id="pushbar"></div>
 
@@ -140,6 +154,7 @@
 
   function showTokenForm(message) {
     clear();
+    renderTop(true);
     app.appendChild(el("h1", { text: "My feedback" }));
     app.appendChild(el("p", { class: "muted", text:
       "Read the feedback your instructor left on your submissions. Nothing to install — you only need the token you use to submit." }));
@@ -185,6 +200,37 @@
   // ---- Web push opt-in -------------------------------------------------
   var pushbar = document.getElementById("pushbar");
   var pushStarted = false;
+
+  // ---- Top bar: Refresh and the notification switch, always in reach ------
+  // The same notification action as the bar at the bottom, so a student does
+  // not have to scroll past every version to find it.
+  var topbar = document.getElementById("topbar");
+  var top = { push: "none", enable: null, msg: "" }; // push: none | off | on
+
+  function renderTop(hidden) {
+    while (topbar.firstChild) topbar.removeChild(topbar.firstChild);
+    if (hidden) return;
+    var kids = [];
+    if (top.push === "on") {
+      kids.push(el("span", { class: "pill", text: "🔔 Notifications on" }));
+    } else if (top.push === "off" && top.enable) {
+      var b = el("button", { type: "button", text: "🔔 Turn on notifications" });
+      b.addEventListener("click", function () { b.disabled = true; top.enable(); });
+      kids.push(b);
+    }
+    var r = el("button", { type: "button", class: "plain", text: "↻ Refresh" });
+    r.addEventListener("click", load);
+    kids.push(r);
+    kids.push(el("span", { class: "msg", text: top.msg }));
+    topbar.appendChild(el("div", { class: "topbar" }, kids));
+  }
+
+  function setTop(push, enable, msg) {
+    top.push = push;
+    top.enable = enable || null;
+    top.msg = msg || "";
+    renderTop();
+  }
 
   function urlB64ToUint8Array(base64) {
     var padding = "=".repeat((4 - (base64.length % 4)) % 4);
@@ -280,15 +326,15 @@
   }
 
   async function initPush() {
-    if (!pushSupported()) return;
+    if (!pushSupported()) { setTop("none"); return; }
     var token = ls("get", TOKEN_KEY);
     if (!token) { setBar(null); return; }
 
     var keyRes = await fetch("/api/vapid-public-key").then(function (r) { return r.ok ? r.json() : null; }).catch(function () { return null; });
-    if (!keyRes || !keyRes.key) { setBar(null); return; } // push not configured on this server
+    if (!keyRes || !keyRes.key) { setBar(null); setTop("none"); return; } // push not configured on this server
 
     var reg = await navigator.serviceWorker.register("/sw.js").catch(function () { return null; });
-    if (!reg) { setBar(null); return; }
+    if (!reg) { setBar(null); setTop("none"); return; }
 
     var appKey = null, keyError = null;
     try {
@@ -330,33 +376,39 @@
       });
       var test = testButton(token);
       setBar([el("span", { class: "grow", text: "New-feedback notifications are on in this browser." }), test[0], offBtn, test[1]], true);
+      setTop("on");
       return;
     }
 
     var onBtn = el("button", { type: "button", text: "🔔 Notify me of new feedback" });
     var note = el("span", { class: "grow", text: keyError || "Get a notification on this device when your instructor sends feedback. (You only allow it once.)" });
-    onBtn.addEventListener("click", async function () {
-      if (keyError) return;
+    // One action for both buttons (here and in the top bar); a problem is
+    // reported in both places.
+    function fail(text) {
+      note.textContent = text;
+      onBtn.disabled = false;
+      setTop("off", enable, text);
+    }
+    async function enable() {
+      if (keyError) return fail(keyError);
       onBtn.disabled = true;
       var perm = Notification.permission === "granted" ? "granted" : await Notification.requestPermission();
       if (perm !== "granted") {
-        note.textContent = "Notifications are blocked in this browser. Allow them from the lock icon in the address bar.";
-        onBtn.disabled = false;
-        return;
+        return fail("Notifications are blocked in this browser. Allow them from the lock icon in the address bar.");
       }
       try {
         await subscribe(reg, appKey, token);
       } catch (e) {
         console.error("[push] subscribe failed:", e);
         var name = e && e.name ? e.name + ": " : "";
-        note.textContent = "Couldn’t turn on notifications — " + name + (e && e.message ? e.message : "try again in a moment.");
-        onBtn.disabled = false;
-        return;
+        return fail("Couldn’t turn on notifications — " + name + (e && e.message ? e.message : "try again in a moment."));
       }
       initPush();
-    });
+    }
+    onBtn.addEventListener("click", enable);
     if (keyError) onBtn.disabled = true;
     setBar([note, onBtn], false);
+    setTop(keyError ? "none" : "off", enable);
   }
 
   var VIEWS = { tracker: "Tracker", timeline: "Timeline", reports: "Reports",
@@ -421,8 +473,10 @@
     var newSeen = {};
     var anyNew = false;
     subs.forEach(function (s) {
+      var href = "/me/board?key=" + encodeURIComponent(s.shareHash);
+      var title = el("strong", { text: "Version " + num[s.shareHash] });
       var head = el("div", { class: "sub-head" }, [
-        el("strong", { text: "Version " + num[s.shareHash] }),
+        s.releasedAt ? el("a", { class: "title", href: href }, [title]) : title,
         el("span", { class: "muted", text: "submitted " + fmtDate(s.submittedAt) }),
       ]);
       var card = el("div", { class: s.releasedAt ? "card" : "card waiting" }, [head]);
@@ -445,10 +499,7 @@
       head.appendChild(el("span", { class: "badge done", text: "Reviewed " + fmtDate(s.releasedAt) }));
       if (isNew) head.appendChild(el("span", { class: "badge", text: "New feedback" }));
       // The read-only board of exactly this version, comments in place.
-      head.appendChild(el("a", {
-        class: "open", href: "/me/board?key=" + encodeURIComponent(s.shareHash),
-        text: "Open version " + num[s.shareHash],
-      }));
+      head.appendChild(el("a", { class: "open", href: href, text: "Open version " + num[s.shareHash] }));
       if (mine.length === 0) {
         card.appendChild(el("p", { class: "muted", text: "No comments on this version." }));
       } else {
@@ -535,6 +586,7 @@
         if (!data) return;
         lastSignature = signature(data);
         render(data);
+        renderTop();
         if (!pushStarted) { pushStarted = true; initPush(); }
         if (!refreshTimer) refreshTimer = setInterval(refreshQuietly, REFRESH_MS);
       })

@@ -1,5 +1,22 @@
 # Changelog
 
+## [0.15.1] - 2026-10-06
+
+**Instructors: redeploy the classroom server** (refresh `me.html` from
+`classroom-template/`, then `--deploy`). Nothing else changes.
+
+### Added
+- **`/me` has a top bar.** It holds **🔔 Turn on notifications**, or a
+  "Notifications on" pill once they are on, and **↻ Refresh**. A student
+  no longer scrolls past every version to reach them. The button does the
+  same thing as the one at the bottom, and a problem shows in both places.
+- **A reviewed version's title is a link** to its board, like its **Open
+  version** button.
+
+### Fixed
+- The submit tests no longer save a classroom config into the real
+  `~/.aict/classroom` of whoever runs them.
+
 ## [0.15.0] - 2026-10-06
 
 From student feedback on `/me`: notifications in Chrome and Whale arrived
