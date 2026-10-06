@@ -92,6 +92,29 @@ describe("POST /api/release", () => {
     expect((r.json as { push: { sent: number } }).push.sent).toBe(1);
   });
 
+  it("lands the click on the released version, names its date, and asks for prompt delivery", async () => {
+    ownedHash();
+    list.mockResolvedValue({ blobs: [{ pathname: "push-sub/alice/h1.json" }], hasMore: false });
+    const origGet = get.getMockImplementation()!;
+    get.mockImplementation(async (p: string) => {
+      if (p === "push-sub/alice/h1.json") {
+        return { statusCode: 200, stream: streamOf({ endpoint: "https://push.example/x", keys: { p256dh: "p", auth: "a" } }) };
+      }
+      if (p.endsWith("alice/_index.json")) {
+        return { statusCode: 200, stream: streamOf([{ idempotencyKey: HASH, submittedAt: "2026-10-04T20:06:00+09:00" }]) };
+      }
+      return origGet(p);
+    });
+    await run("POST", authed(), {}, { shareHash: HASH },
+      { ...VAPID_ENV, VERCEL_PROJECT_PRODUCTION_URL: "roster.example" }, NOW);
+    const call = sendNotification.mock.calls[0] as unknown as [unknown, string, { TTL: number; urgency: string }];
+    const payload = JSON.parse(call[1]);
+    expect(payload.url).toBe(`https://roster.example/me/board?key=${HASH}`);
+    expect(payload.body).toContain("Oct 4, 20:06");
+    expect(call[2].TTL).toBe(7 * 24 * 3600);
+    expect(call[2].urgency).toBe("high");
+  });
+
   it("still succeeds (release written) when the push send throws", async () => {
     ownedHash();
     list.mockResolvedValue({ blobs: [{ pathname: "push-sub/alice/h1.json" }], hasMore: false });

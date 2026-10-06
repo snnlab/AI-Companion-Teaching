@@ -27,6 +27,15 @@ import sys
 import uuid
 from pathlib import Path
 
+# Console output is UTF-8 whatever the OS locale: on Korean Windows (cp949) a
+# bare print() of an em dash, or of a Korean manuscript excerpt, raises
+# UnicodeEncodeError. Same as running under PYTHONUTF8=1 (check.py does this too).
+for _stream in (sys.stdout, sys.stderr):
+    try:
+        _stream.reconfigure(encoding="utf-8", errors="replace")
+    except (AttributeError, ValueError):
+        pass
+
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 
 MAX_BYTES = 5 * 1024 * 1024
@@ -49,7 +58,7 @@ def find_root(start=None):
     try:
         out = subprocess.run(
             ["git", "rev-parse", "--show-toplevel"],
-            capture_output=True, text=True, timeout=10,
+            capture_output=True, text=True, encoding="utf-8", errors="replace", timeout=10,
             cwd=str(start) if start else None,
         )
         if out.returncode == 0 and out.stdout.strip():

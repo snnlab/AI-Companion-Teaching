@@ -48,7 +48,7 @@ def make_project(root: Path):
 def run_cli(cwd, *argv):
     return subprocess.run(
         [sys.executable, str(RESULTS), *argv],
-        capture_output=True, text=True, cwd=str(cwd), timeout=60,
+        capture_output=True, text=True, encoding="utf-8", errors="replace", cwd=str(cwd), timeout=60,
     )
 
 

@@ -203,7 +203,7 @@ class TestSignSelection(unittest.TestCase):
          ".draft-v2.md").unlink()
         run = subprocess.run(
             [sys.executable, str(BOARD), "--sign", "--no-open"],
-            cwd=str(self.root), capture_output=True, text=True, timeout=10)
+            cwd=str(self.root), capture_output=True, text=True, encoding="utf-8", errors="replace", timeout=10)
         self.assertEqual(run.returncode, 0, run.stderr)
         self.assertIn("no eligible", run.stderr)
         self.assertNotIn("Board:", run.stderr)
@@ -214,7 +214,7 @@ class TestSignSelection(unittest.TestCase):
         draft.write_text("# draft\n\nSigned off: placeholder\n", encoding="utf-8")
         run = subprocess.run(
             [sys.executable, str(BOARD), "--sign", "--no-open"],
-            cwd=str(self.root), capture_output=True, text=True, timeout=10)
+            cwd=str(self.root), capture_output=True, text=True, encoding="utf-8", errors="replace", timeout=10)
         self.assertEqual(run.returncode, 0, run.stderr)
         self.assertIn(".draft-v2.md", run.stderr)
         self.assertIn("repair", run.stderr.lower())

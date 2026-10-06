@@ -110,6 +110,16 @@ export async function listSubs(
 
 export interface PushResult { sent: number; pruned: number }
 
+/** What the service worker (sw.js) shows. `url` is where a click lands;
+ * `tag` groups notifications (same tag = replace, not stack). */
+export interface PushPayload { title: string; body: string; url: string; tag?: string }
+
+// How long the push service holds a message for a device that is offline —
+// or, on a desktop, a browser that is not running. Chrome and Whale only
+// receive pushes while the browser process runs, so a student who closed the
+// browser over a weekend got nothing with the old 24 h.
+export const PUSH_TTL_SECONDS = 7 * 24 * 3600;
+
 /** Send `payload` to every subscription; delete any the push service
  * reports as gone. Never throws — a notification failure must not fail the
  * release it rides on. */
@@ -117,7 +127,7 @@ export async function sendToStudent(
   blobToken: string,
   studentId: string,
   vapid: VapidConfig,
-  payload: { title: string; body: string; url: string },
+  payload: PushPayload,
   deps: {
     listSubs: typeof listSubs;
     deleteSubByEndpoint: typeof deleteSubByEndpoint;
@@ -163,7 +173,11 @@ async function sendOne(
         publicKey: vapid.publicKey,
         privateKey: vapid.privateKey,
       },
-      TTL: 24 * 3600,
+      TTL: PUSH_TTL_SECONDS,
+      // "high" asks the push service to wake an idle device now instead of
+      // batching the message (Android doze, a sleeping laptop): feedback is
+      // something the student is waiting for.
+      urgency: "high",
     },
   );
   return res.statusCode;

@@ -448,7 +448,8 @@ class TestHistory(unittest.TestCase):
 
     def test_history_lists_only_released_submissions(self):
         text = self.run_main("--history")
-        self.assertIn("1. submitted 2026-09-29 23:40", text)
+        # Version 1 of 2: the unreleased one is newer, and still counts.
+        self.assertIn("1. Version 1 · submitted 2026-09-29 23:40", text)
         self.assertIn("1 comment(s)", text)
         self.assertNotIn("fedcba9876543210", text)  # never released
 
@@ -484,6 +485,16 @@ class TestHistory(unittest.TestCase):
         listing = self.run_main("--history")
         self.assertIn("showing the copies saved on this machine", listing)
         self.assertIn("· saved", listing)
+
+    def test_open_by_version_number(self):
+        text = self.run_main("--open", "v1")
+        self.assertIn("[ait:check] Version 1, submitted 2026-09-29 23:40", text)
+        out = check.history_dir(self.root, {"submittedAt": "2026-09-29T23:40:00+09:00",
+                                            "shareHash": "0123456789abcdef"})
+        self.assertIn('"version": 1', (out / "board.html").read_text(encoding="utf-8"))
+        err = io.StringIO()
+        with contextlib.redirect_stderr(err), self.assertRaises(SystemExit):
+            check.main(["--open", "v2"])  # Version 2 is not reviewed yet
 
     def test_open_unknown_number_explains(self):
         err = io.StringIO()

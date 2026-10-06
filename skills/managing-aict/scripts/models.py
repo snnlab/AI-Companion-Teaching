@@ -20,6 +20,15 @@ import sys
 import tempfile
 from pathlib import Path
 
+# Console output is UTF-8 whatever the OS locale: on Korean Windows (cp949) a
+# bare print() of an em dash, or of a Korean manuscript excerpt, raises
+# UnicodeEncodeError. Same as running under PYTHONUTF8=1 (check.py does this too).
+for _stream in (sys.stdout, sys.stderr):
+    try:
+        _stream.reconfigure(encoding="utf-8", errors="replace")
+    except (AttributeError, ValueError):
+        pass
+
 STAGE_LABELS = {
     "plan": "plan",
     "execute": "execute",

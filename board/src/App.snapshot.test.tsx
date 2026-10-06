@@ -143,4 +143,96 @@ describe("StudentHistoryApp (/me/board)", () => {
     expect((await screen.findByRole("dialog", { name: "Comment" })).textContent).toContain("Cite two of them.");
     expect(new URL(location.href).searchParams.get("key")).toBe(KEY);
   });
+
+  it("numbers versions among all submissions and switches between reviewed ones only", async () => {
+    localStorage.setItem(ME_TOKEN_KEY, "tok-alice");
+    const V1 = "1111111111111111", V2 = "2222222222222222", V3 = "3333333333333333";
+    const requested: string[] = [];
+    vi.stubGlobal("fetch", vi.fn(async (url: string) => {
+      if (url === "/api/my-comments") {
+        return {
+          ok: true, status: 200,
+          json: async () => ({
+            studentId: "alice", comments: [],
+            submissions: [
+              { shareHash: V3, submittedAt: "2026-10-03T10:00:00+09:00", releasedAt: "2026-10-04T01:00:00.000Z" },
+              { shareHash: V1, submittedAt: "2026-09-20T10:00:00+09:00", releasedAt: "2026-09-21T01:00:00.000Z" },
+              { shareHash: V2, submittedAt: "2026-09-28T10:00:00+09:00", releasedAt: null },
+            ],
+          }),
+        };
+      }
+      if (url.startsWith("/api/my-submission?")) {
+        requested.push(new URLSearchParams(url.split("?")[1]).get("key")!);
+        return { ok: true, status: 200, json: async () => ({ submittedAt: "2026-10-03T10:00:00+09:00", releasedAt: "x", payload: payload() }) };
+      }
+      throw new Error(`unexpected ${url}`);
+    }) as unknown as typeof fetch);
+    history.replaceState(null, "", "/me/board");
+
+    render(<StudentHistoryApp />);
+    // Newest reviewed version first: V3 is the third submission of three.
+    expect((await screen.findByTestId("version-heading")).textContent).toBe("Version 3 of 3");
+    expect(await screen.findByText(/Version 3 · Read-only copy/)).toBeTruthy();
+    expect(screen.getByText(/1 version is waiting for review/)).toBeTruthy();
+    const select = screen.getByRole("combobox", { name: "Reviewed version" }) as HTMLSelectElement;
+    // The unreviewed V2 is not offered.
+    expect(Array.from(select.options).map((o) => o.textContent)).toEqual([
+      expect.stringMatching(/^Version 3 · \d{2}-\d{2}$/), expect.stringMatching(/^Version 1 · \d{2}-\d{2}$/),
+    ]);
+    expect((screen.getByRole("button", { name: "Newer →" }) as HTMLButtonElement).disabled).toBe(true);
+    fireEvent.click(screen.getByRole("button", { name: "← Older" }));
+    await waitFor(() => expect(screen.getByTestId("version-heading").textContent).toBe("Version 1 of 3"));
+    await waitFor(() => expect(requested).toEqual([V3, V1]));
+    expect(new URL(location.href).searchParams.get("key")).toBe(V1);
+    expect(requested).not.toContain(V2);
+  });
+});
+
+describe("submitted copy (/ait:submit receipt)", () => {
+  function receiptData(status: "created" | "replay"): BoardData {
+    const base = payload();
+    base.files.manuscript!.path = "APOE4 paper.docx";
+    base.files.manuscript!.modifiedAt = "2026-10-04T20:06:00+09:00";
+    return {
+      ...base,
+      shareHash: KEY,
+      mode: "snapshot",
+      snapshot: {
+        submittedAt: "2026-10-04T20:10:00+09:00", releasedAt: null, comments: [],
+        receipt: {
+          status, submissionId: "sub-42",
+          manuscript: { path: "APOE4 paper.docx", modifiedAt: "2026-10-04T20:06:00+09:00", pinned: true },
+          plans: [{ component: "01-data-prep", versions: [1, 2] }],
+          results: [],
+        },
+      },
+    };
+  }
+
+  it("names the submission, the manuscript file with its saved time, and the plan versions", () => {
+    vi.stubGlobal("fetch", vi.fn());
+    render(<App data={receiptData("created")} />);
+    const banner = screen.getByTestId("submit-receipt");
+    expect(banner.textContent).toContain("submission sub-42");
+    expect(banner.textContent).toContain("APOE4 paper.docx");
+    expect(banner.textContent).toMatch(/saved \d{4}-\d{2}-\d{2} \d{2}:\d{2}/);
+    expect(banner.textContent).toContain("01-data-prep v1, v2");
+    expect(screen.queryByText(/click a highlight/)).toBeNull();
+  });
+
+  it("says nothing new was sent on a replay", () => {
+    vi.stubGlobal("fetch", vi.fn());
+    render(<App data={receiptData("replay")} />);
+    expect(screen.getByTestId("submit-receipt").textContent).toContain("Nothing new was sent");
+  });
+
+  it("shows the manuscript's file and saved time above the text", () => {
+    vi.stubGlobal("fetch", vi.fn());
+    render(<App data={receiptData("created")} />);
+    fireEvent.click(screen.getByRole("button", { name: "Manuscript" }));
+    const src = screen.getByTestId("manuscript-source");
+    expect(src.textContent).toContain("APOE4 paper.docx");
+    expect(src.textContent).toContain("saved");
+  });
 });

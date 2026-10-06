@@ -233,14 +233,35 @@ HISTORY_DIR = ".aict-history"
 ASSET_REF_PREFIX = "aict-asset:"
 
 
+def _when(sub):
+    """A submission's time as a sortable UTC timestamp (0 when unreadable) —
+    submittedAt carries each student's own offset, so strings don't sort."""
+    try:
+        d = datetime.fromisoformat((sub.get("submittedAt") or "").replace("Z", "+00:00"))
+    except ValueError:
+        return 0.0
+    if d.tzinfo is None:
+        d = d.astimezone()
+    return d.timestamp()
+
+
 def _released(data):
-    """Released submissions, newest first, each with its comments."""
+    """Released submissions, newest first, each with its comments and its
+    `version`: its place among ALL the student's submissions, oldest = 1 —
+    the numbering the /me page and the history board show."""
     comments = data.get("comments") or []
-    subs = [s for s in (data.get("submissions") or []) if s.get("releasedAt")]
-    subs.sort(key=lambda s: s.get("submittedAt") or "", reverse=True)
+    every = sorted(data.get("submissions") or [], key=_when)
+    for n, s in enumerate(every, 1):
+        s["version"] = n
+    subs = [s for s in every if s.get("releasedAt")]
+    subs.sort(key=_when, reverse=True)
     for s in subs:
         s["comments"] = [c for c in comments if c.get("shareHash") == s.get("shareHash")]
     return subs
+
+
+def _version_label(sub):
+    return "Version %d" % sub["version"] if sub.get("version") else "Version ?"
 
 
 def _stamp(iso):
@@ -277,17 +298,23 @@ def _local_snapshots(root):
         out.append({
             "shareHash": rec.get("shareHash"), "submittedAt": rec.get("submittedAt"),
             "releasedAt": rec.get("releasedAt"), "comments": rec.get("comments") or [],
+            "version": rec.get("version"),
         })
-    out.sort(key=lambda s: s.get("submittedAt") or "", reverse=True)
+    out.sort(key=_when, reverse=True)
     return out
 
 
 def _pick(subs, which):
-    """`which` is 1-based (1 = newest), "latest", or a shareHash (prefix)."""
+    """`which` is 1-based (1 = newest), "latest", "v<N>" (Version N), or a
+    shareHash (prefix)."""
     if not subs:
         return None
     if which in (None, "", "latest"):
         return subs[0]
+    m = re.fullmatch(r"v(?:ersion)?\s*(\d+)", str(which).strip(), re.IGNORECASE)
+    if m:
+        hits = [s for s in subs if s.get("version") == int(m.group(1))]
+        return hits[0] if hits else None
     if str(which).isdigit():
         i = int(which)
         return subs[i - 1] if 1 <= i <= len(subs) else None
@@ -479,13 +506,13 @@ def cmd_history(root):
     if not subs:
         print("No reviewed submissions yet." if not offline else "No saved submissions on this machine.")
         return
-    print("Reviewed submissions (newest first):")
+    print("Reviewed versions (newest first):")
     for n, sub in enumerate(subs, 1):
         saved = (history_dir(root, sub) / "board.html").is_file()
-        print("  %d. submitted %s · feedback sent %s · %d comment(s)%s  [%s]" % (
-            n, _stamp(sub.get("submittedAt")), _stamp(sub.get("releasedAt")),
+        print("  %d. %s · submitted %s · feedback sent %s · %d comment(s)%s  [%s]" % (
+            n, _version_label(sub), _stamp(sub.get("submittedAt")), _stamp(sub.get("releasedAt")),
             len(sub.get("comments") or []), " · saved" if saved else "", sub["shareHash"]))
-    print("Open one with: /ait:check --open <number>")
+    print("Open one with: /ait:check --open <number>  (or --open v<N> for Version N)")
 
 
 def cmd_open(root, which, refresh=False):
@@ -525,6 +552,8 @@ def cmd_open(root, which, refresh=False):
         payload.pop("externalAssets", None)
         rec = {"shareHash": sub["shareHash"], "submittedAt": got.get("submittedAt") or sub.get("submittedAt"),
                "releasedAt": got.get("releasedAt") or sub.get("releasedAt"), "payload": payload}
+    if sub.get("version"):
+        rec["version"] = sub["version"]
     # Comments always come fresh when the server answers (the instructor may
     # have edited or deleted one since); the saved copy is the offline fallback.
     if online:
@@ -534,7 +563,7 @@ def cmd_open(root, which, refresh=False):
 
     board_payload = dict(rec["payload"], mode="snapshot", shareHash=rec["shareHash"], snapshot={
         "submittedAt": rec.get("submittedAt") or "", "releasedAt": rec.get("releasedAt"),
-        "comments": comments})
+        "comments": comments, **({"version": rec["version"]} if rec.get("version") else {})})
     out.mkdir(parents=True, exist_ok=True)
     snap_path.write_text(json.dumps(rec, ensure_ascii=False), encoding="utf-8")
     board_path = out / "board.html"
@@ -542,8 +571,9 @@ def cmd_open(root, which, refresh=False):
     fb_path = out / "feedback.md"
     fb_path.write_text(feedback_markdown(rec, rec["payload"], comments), encoding="utf-8")
 
-    print("[ait:check] submission of %s · %d comment(s)%s" % (
-        _stamp(rec.get("submittedAt")), len(comments), "" if online else " (saved copy — server unreachable)"))
+    print("[ait:check] %s, submitted %s · %d comment(s)%s" % (
+        _version_label(rec), _stamp(rec.get("submittedAt")), len(comments),
+        "" if online else " (saved copy — server unreachable)"))
     print("[ait:check] history board: %s" % board_path.as_posix())
     print("[ait:check] feedback text: %s" % fb_path.as_posix())
     if not os.environ.get("AICT_NO_BOARD"):

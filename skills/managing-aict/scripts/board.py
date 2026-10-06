@@ -48,6 +48,15 @@ import xml.etree.ElementTree as ET
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 
+# Console output is UTF-8 whatever the OS locale: on Korean Windows (cp949) a
+# bare print() of an em dash, or of a Korean manuscript excerpt, raises
+# UnicodeEncodeError. Same as running under PYTHONUTF8=1 (check.py does this too).
+for _stream in (sys.stdout, sys.stderr):
+    try:
+        _stream.reconfigure(encoding="utf-8", errors="replace")
+    except (AttributeError, ValueError):
+        pass
+
 # Share the gate's plan normalization so a batch ticket's hash (over the unsigned
 # draft) matches the gate's hash (over the signed vN.md write). Must not drift.
 sys.path.insert(0, str(Path(__file__).resolve().parent))
@@ -99,6 +108,7 @@ GITIGNORE_LINES = [
     "/execution/*/results/.staging-*/",
     "/.board-web/",
     "/.aict-history/",
+    "/.aict-submitted/",
     "/.board-web-inbox/",
     "/.board-web-pulled.json",
     "/.board-web-pulled.json.tmp",
@@ -160,7 +170,7 @@ def web_config_path(root):
 def read_web_config(root):
     name = "%s.json" % web_project_hash(root)
     try:
-        return json.loads((_web_data_dir() / name).read_text())
+        return json.loads((_web_data_dir() / name).read_text(encoding="utf-8"))
     except (OSError, ValueError):
         return None
 
@@ -181,7 +191,7 @@ def find_root():
     try:
         out = subprocess.run(
             ["git", "rev-parse", "--show-toplevel"],
-            capture_output=True, text=True, timeout=10,
+            capture_output=True, text=True, encoding="utf-8", errors="replace", timeout=10,
         )
         if out.returncode == 0 and out.stdout.strip():
             return Path(out.stdout.strip())
@@ -195,13 +205,13 @@ def git_info(root, paths):
     try:
         head = subprocess.run(
             ["git", "rev-parse", "--short", "HEAD"],
-            capture_output=True, text=True, cwd=str(root), timeout=10,
+            capture_output=True, text=True, encoding="utf-8", errors="replace", cwd=str(root), timeout=10,
         )
         if head.returncode != 0:
             return info
         branch = subprocess.run(
             ["git", "rev-parse", "--abbrev-ref", "HEAD"],
-            capture_output=True, text=True, cwd=str(root), timeout=10,
+            capture_output=True, text=True, encoding="utf-8", errors="replace", cwd=str(root), timeout=10,
         )
         info = {
             "available": True,
@@ -213,11 +223,11 @@ def git_info(root, paths):
             try:
                 last = subprocess.run(
                     ["git", "log", "-1", "--format=%cI", "--", rel],
-                    capture_output=True, text=True, cwd=str(root), timeout=10,
+                    capture_output=True, text=True, encoding="utf-8", errors="replace", cwd=str(root), timeout=10,
                 )
                 first = subprocess.run(
                     ["git", "log", "--reverse", "--format=%cI", "--", rel],
-                    capture_output=True, text=True, cwd=str(root), timeout=10,
+                    capture_output=True, text=True, encoding="utf-8", errors="replace", cwd=str(root), timeout=10,
                 )
                 dates = {}
                 if last.returncode == 0 and last.stdout.strip():
@@ -1131,9 +1141,9 @@ class _DocxHtml:
 
 def manuscript_figure_files(root, manuscript):
     """[(href, Path)] for each image a markdown manuscript references by a
-    relative path. An href resolves against plans/ (where manuscript.md
-    lives) first, then the repo root — so both `figures/f1.png` and
-    `output/f1.png` work. Anything escaping the project root, not an image,
+    relative path. An href resolves against the manuscript's own folder
+    (plans/ for plans/manuscript.md) first, then the repo root — so both
+    `figures/f1.png` and `output/f1.png` work. Anything escaping the project root, not an image,
     missing, or over the size cap is skipped and renders as alt text."""
     if not manuscript or manuscript.get("format") != "markdown":
         return []
@@ -1147,7 +1157,7 @@ def manuscript_figure_files(root, manuscript):
         rel = urllib.parse.unquote(href)
         if os.path.splitext(rel)[1].lower() not in MANUSCRIPT_FIGURE_EXTS:
             continue
-        for base in (root_r / "plans", root_r):
+        for base in ((root_r / manuscript["path"]).parent, root_r):
             try:
                 f = (base / rel).resolve()
                 f.relative_to(root_r)
@@ -1173,51 +1183,138 @@ _MANUSCRIPT_CANDIDATES = [
     ("manuscript.hwp", "unsupported"),
     ("manuscript.hwpx", "unsupported"),
 ]
+MANUSCRIPT_FORMATS = {".md": "markdown", ".docx": "docx-html",
+                      ".hwp": "unsupported", ".hwpx": "unsupported"}
+# A student who writes the paper somewhere other than plans/manuscript.* (a
+# Word file at the project root, say) pins it here once — one project-relative
+# path — and the board and /ait:submit read that file from then on. Committed,
+# so the choice is part of the project's record.
+MANUSCRIPT_SOURCE = "plans/manuscript-source.txt"
+
+
+def read_manuscript_source(root):
+    """The pinned manuscript path (project-relative, POSIX), or None."""
+    try:
+        text = (root / MANUSCRIPT_SOURCE).read_text(encoding="utf-8-sig")
+    except OSError:
+        return None
+    for line in text.splitlines():
+        line = line.strip()
+        if line and not line.startswith("#"):
+            return line.replace("\\", "/")
+    return None
+
+
+def write_manuscript_source(root, path):
+    """Pin `path` (absolute, or relative to the cwd or the project root) as
+    the manuscript. Returns the stored project-relative path; raises
+    ValueError with a student-facing reason when it can't be used."""
+    p = Path(path).expanduser()
+    if not p.is_absolute():
+        p = (Path.cwd() / p) if (Path.cwd() / p).exists() else (root / p)
+    p = p.resolve()
+    try:
+        rel = p.relative_to(Path(root).resolve()).as_posix()
+    except ValueError:
+        raise ValueError("%s is outside this project — keep the manuscript inside %s "
+                         "(it is sent to your instructor by its path in the project)" % (p, root))
+    if not p.is_file():
+        raise ValueError("%s does not exist" % rel)
+    if p.suffix.lower() not in MANUSCRIPT_FORMATS:
+        raise ValueError("%s is not a manuscript file (.md, .docx, .hwp or .hwpx)" % rel)
+    (root / MANUSCRIPT_SOURCE).write_text(
+        "# The manuscript the board shows and /ait:submit sends (path in this project).\n"
+        "# Delete this file to go back to plans/manuscript.md / plans/manuscript.docx.\n"
+        "%s\n" % rel, encoding="utf-8")
+    return rel
+
+
+def clear_manuscript_source(root):
+    try:
+        (root / MANUSCRIPT_SOURCE).unlink()
+    except FileNotFoundError:
+        pass
+
+
+def manuscript_location(root):
+    """(Path, project-relative path, format, pinned) of the manuscript the
+    board shows and /ait:submit sends, or None. A pinned path wins — even when
+    it no longer exists (reported as missing, never silently replaced by an
+    older plans/manuscript.* copy); otherwise plans/manuscript.{md,docx,hwp,
+    hwpx} in that priority order."""
+    pinned = read_manuscript_source(root)
+    if pinned:
+        p = root / pinned
+        return p, pinned, MANUSCRIPT_FORMATS.get(p.suffix.lower(), "unsupported"), True
+    for name, fmt in _MANUSCRIPT_CANDIDATES:
+        p = root / "plans" / name
+        if p.is_file():
+            return p, "plans/" + name, fmt, False
+    return None
+
+
+def _mtime_iso(p):
+    try:
+        ts = p.stat().st_mtime
+    except OSError:
+        return None
+    return datetime.datetime.fromtimestamp(ts).astimezone().isoformat(timespec="seconds")
 
 
 def _read_manuscript_file(root):
-    """Finds plans/manuscript.{md,docx,hwp,hwpx} in that priority order.
-    Markdown is the encouraged path; docx is converted to sanitizable HTML
-    (_docx_to_html) so tables and formatting survive; hwp/hwpx are surfaced as unsupported rather than guessed at —
-    there's no reliable stdlib-only parse path for the legacy binary format,
-    and no sample file in this repo to validate an hwpx (zip/XML) attempt
-    against. Returns None when no manuscript file exists at all."""
-    plans = root / "plans"
-    for name, fmt in _MANUSCRIPT_CANDIDATES:
-        p = plans / name
-        if not p.is_file():
-            continue
-        rel = "plans/" + name
-        if fmt == "unsupported":
-            return {
-                "path": rel,
-                "content": "",
-                "format": "unsupported",
-                "note": "HWP files can't be previewed on the board. Write your "
-                        "manuscript in plans/manuscript.md (recommended), or "
-                        "export it to Word (plans/manuscript.docx).",
-            }
-        if fmt == "markdown":
-            entry = read_file(root, rel)
-            entry["format"] = "markdown"
-            return entry
-        # docx
-        try:
-            content, docx_assets = _docx_to_html(p)
-        except (KeyError, zipfile.BadZipFile, ET.ParseError, OSError):
-            return {
-                "path": rel,
-                "content": "",
-                "format": "unsupported",
-                "note": "This Word file couldn't be read (it may be corrupted "
-                        "or not a standard .docx). Write your manuscript in "
-                        "plans/manuscript.md instead.",
-            }
-        entry = {"path": rel, "content": content, "format": "docx-html"}
-        if docx_assets:
-            entry["assets"] = docx_assets
+    """The manuscript entry for the payload (see manuscript_location for which
+    file). Markdown is the encouraged path; docx is converted to sanitizable
+    HTML (_docx_to_html) so tables and formatting survive; hwp/hwpx are
+    surfaced as unsupported rather than guessed at — there's no reliable
+    stdlib-only parse path for the legacy binary format, and no sample file in
+    this repo to validate an hwpx (zip/XML) attempt against. `modifiedAt` is
+    the file's own saved time, so the board and the instructor see which
+    save of the paper this is. Returns None when there is no manuscript."""
+    loc = manuscript_location(root)
+    if loc is None:
+        return None
+    p, rel, fmt, pinned = loc
+    if not p.is_file():
+        return {
+            "path": rel,
+            "content": "",
+            "format": "unsupported",
+            "note": "The manuscript file set in %s (%s) is missing. Point it at "
+                    "your current manuscript with /ait:submit." % (MANUSCRIPT_SOURCE, rel),
+        }
+    modified = {"modifiedAt": _mtime_iso(p)}
+    if fmt == "unsupported":
+        return {
+            "path": rel,
+            "content": "",
+            "format": "unsupported",
+            "note": "HWP files can't be previewed on the board. Write your "
+                    "manuscript in plans/manuscript.md (recommended), or "
+                    "save it as Word (.docx).",
+            **modified,
+        }
+    if fmt == "markdown":
+        entry = read_file(root, rel)
+        entry["format"] = "markdown"
+        entry.update(modified)
         return entry
-    return None
+    # docx
+    try:
+        content, docx_assets = _docx_to_html(p)
+    except (KeyError, zipfile.BadZipFile, ET.ParseError, OSError):
+        return {
+            "path": rel,
+            "content": "",
+            "format": "unsupported",
+            "note": "This Word file couldn't be read (it may be corrupted "
+                    "or not a standard .docx). Write "
+                    "your manuscript in plans/manuscript.md instead.",
+            **modified,
+        }
+    entry = {"path": rel, "content": content, "format": "docx-html", **modified}
+    if docx_assets:
+        entry["assets"] = docx_assets
+    return entry
 
 
 def payload_files(payload):
@@ -1541,7 +1638,7 @@ def agents_gitignored(root):
              for a in ("aict-plan-reviewer", "aict-results-validator", "aict-board-reviewer")]
     try:
         r = subprocess.run(["git", "-C", str(root), "check-ignore", *paths],
-                           capture_output=True, text=True, timeout=5)
+                           capture_output=True, text=True, encoding="utf-8", errors="replace", timeout=5)
     except (OSError, subprocess.SubprocessError):
         return None
     if r.returncode == 0:
@@ -1928,7 +2025,7 @@ def project_id(root):
 
 
 _FP_EXACT = {".board.lock", ".board-feedback.md", ".board-feedback.md.tmp",
-             ".board-web"}
+             ".board-web", ".aict-submitted"}
 
 
 def fingerprint_excluded(name):
@@ -1953,7 +2050,7 @@ def resolve_git_paths(root):
         r = subprocess.run(
             ["git", "rev-parse", "--git-path", "HEAD", "--git-path", "index",
              "--git-path", "refs/heads", "--git-path", "packed-refs"],
-            capture_output=True, text=True, cwd=str(root), timeout=10)
+            capture_output=True, text=True, encoding="utf-8", errors="replace", cwd=str(root), timeout=10)
     except Exception:
         return []
     if r.returncode != 0:
@@ -1991,6 +2088,15 @@ def plans_fingerprint(root, git_paths):
                 continue
             entries.append(("f", os.path.join(rel, fn),
                             st.st_mtime_ns, st.st_size))
+    # A pinned manuscript (plans/manuscript-source.txt) may live outside
+    # plans/ — watch the file itself so a Word save refreshes the board.
+    pinned = read_manuscript_source(root)
+    if pinned:
+        try:
+            st = (root / pinned).stat()
+            entries.append(("m", pinned, st.st_mtime_ns, st.st_size))
+        except OSError:
+            entries.append(("m", pinned, None))
     for gp in git_paths:
         try:
             entries.append(("g", str(gp), gp.stat().st_mtime_ns))
@@ -3007,7 +3113,7 @@ def materialize_web_dir(root):
 
 def _vercel(argv, cwd=None):
     try:
-        r = subprocess.run(["vercel", *argv], cwd=cwd, capture_output=True, text=True, timeout=600)
+        r = subprocess.run(["vercel", *argv], cwd=cwd, capture_output=True, text=True, encoding="utf-8", errors="replace", timeout=600)
         return r.returncode, (r.stdout or "").strip() + (r.stderr or "")
     except (OSError, subprocess.SubprocessError) as e:
         return 1, str(e)
@@ -3048,7 +3154,7 @@ def _pulled_path(root):
 
 def _read_pulled(root):
     try:
-        return set(json.loads(_pulled_path(root).read_text()))
+        return set(json.loads(_pulled_path(root).read_text(encoding="utf-8")))
     except (OSError, ValueError):
         return set()
 
@@ -3197,7 +3303,7 @@ def web_connect(root, args):
     if rc != 0:
         die("Could not link to an existing Vercel project. If you have none, run --publish-web.")
     rc, _ = _vercel(["env", "pull", ".env.local"], cwd=str(out))
-    envtext = (out / ".env.local").read_text() if (out / ".env.local").exists() else ""
+    envtext = (out / ".env.local").read_text(encoding="utf-8") if (out / ".env.local").exists() else ""
     m = re.search(r'BOARD_PULL_KEY=(?:"?)([^"\n]+)', envtext)
     url_m = re.search(r'BOARD_URL=(?:"?)([^"\n]+)', envtext)
     if not m:
@@ -3319,7 +3425,7 @@ def parse_github_remote(url):
 
 def _git(cwd, argv, check=True, timeout=120):
     r = subprocess.run(["git", *argv], cwd=str(cwd),
-                       capture_output=True, text=True, timeout=timeout)
+                       capture_output=True, text=True, encoding="utf-8", errors="replace", timeout=timeout)
     if check and r.returncode != 0:
         die("git %s failed:\n%s" % (" ".join(argv), (r.stderr or r.stdout).strip()))
     return r
@@ -3383,7 +3489,7 @@ def _gh(argv):
     if shutil.which("gh") is None:
         return None
     try:
-        return subprocess.run(["gh", *argv], capture_output=True, text=True, timeout=30)
+        return subprocess.run(["gh", *argv], capture_output=True, text=True, encoding="utf-8", errors="replace", timeout=30)
     except (OSError, subprocess.SubprocessError):
         return None
 

@@ -64,8 +64,9 @@ export default function Manuscript({
           No manuscript yet
         </p>
         <p>
-          Write your paper draft in <code>plans/manuscript.md</code> — it will
-          show up here, and your instructor can leave feedback on it directly.
+          Write your paper draft in <code>plans/manuscript.md</code> (or
+          Word, <code>plans/manuscript.docx</code>) — it will show up here,
+          and your instructor can leave feedback on it directly.
         </p>
       </div>
     );
@@ -98,7 +99,7 @@ export default function Manuscript({
       .map((a) => ({ a })),
   ];
   const printSubtitle = [
-    manuscript.path,
+    manuscript.path + (manuscript.modifiedAt ? ` (saved ${fmtDate(manuscript.modifiedAt)})` : ""),
     data.snapshot ? `submitted ${fmtDate(data.snapshot.submittedAt)}` : `board of ${data.generatedAt.slice(0, 16).replace("T", " ")}`,
     `printed ${fmtDate(new Date().toISOString())}`,
   ].join(" · ");
@@ -124,6 +125,10 @@ export default function Manuscript({
         <Notice text={manuscript.note} />
       )}
       <div className="mb-2 flex max-w-[52rem] flex-wrap items-center justify-end gap-3 text-xs text-stone-600 dark:text-stone-300">
+        <span className="mr-auto min-w-0 break-words text-stone-500 dark:text-stone-400" data-testid="manuscript-source">
+          <code>{manuscript.path}</code>
+          {manuscript.modifiedAt ? ` · saved ${fmtDate(manuscript.modifiedAt)}` : ""}
+        </span>
         {printComments.length > 0 && (
           <label className="flex cursor-pointer items-center gap-1.5">
             <input

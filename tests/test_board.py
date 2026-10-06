@@ -165,7 +165,7 @@ def add_output_score(root: Path):
 def run_board(cwd, *argv):
     return subprocess.run(
         [sys.executable, str(BOARD), *argv],
-        capture_output=True, text=True, cwd=str(cwd), timeout=60,
+        capture_output=True, text=True, encoding="utf-8", errors="replace", cwd=str(cwd), timeout=60,
     )
 
 
@@ -1006,25 +1006,25 @@ class TestPublish(unittest.TestCase):
                            check=True, capture_output=True)
             head_before = subprocess.run(
                 ["git", "-C", str(work), "rev-parse", "HEAD"],
-                capture_output=True, text=True).stdout.strip()
+                capture_output=True, text=True, encoding="utf-8", errors="replace").stdout.strip()
 
             # first publish → orphan gh-pages carrying both files
             self.assertEqual(
                 board.publish_to_branch(work, {"board.html": "<h1>v1</h1>", "index.html": "i"},
                                         "gh-pages", "p1"), "pushed")
             tree = subprocess.run(["git", "-C", str(origin), "ls-tree", "-r", "--name-only",
-                                   "gh-pages"], capture_output=True, text=True).stdout
+                                   "gh-pages"], capture_output=True, text=True, encoding="utf-8", errors="replace").stdout
             self.assertIn("board.html", tree)
             self.assertIn("index.html", tree)
 
             # the working tree and current branch are untouched
             self.assertEqual(
                 subprocess.run(["git", "-C", str(work), "rev-parse", "HEAD"],
-                               capture_output=True, text=True).stdout.strip(), head_before)
+                               capture_output=True, text=True, encoding="utf-8", errors="replace").stdout.strip(), head_before)
             self.assertFalse((work / "board.html").exists())
             self.assertNotIn(board.TMP_BRANCH_PREFIX,
                              subprocess.run(["git", "-C", str(work), "branch"],
-                                            capture_output=True, text=True).stdout)
+                                            capture_output=True, text=True, encoding="utf-8", errors="replace").stdout)
 
             # identical content → unchanged; changed content → pushed again
             self.assertEqual(
@@ -1947,7 +1947,7 @@ def spawn_board(root, *argv, timeout=30):
     """Subprocess board server. Returns (Popen, url). Callers terminate()."""
     proc = subprocess.Popen(
         [sys.executable, str(BOARD), "--no-open", "--timeout", str(timeout), *argv],
-        cwd=str(root), stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True)
+        cwd=str(root), stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True, encoding="utf-8", errors="replace")
     url = None
     for _ in range(400):
         line = proc.stderr.readline()
@@ -2660,7 +2660,7 @@ class TestRelaunchE2E(unittest.TestCase):
                 # Loop contract: route, THEN ack, THEN relaunch on the SAME port.
                 rc = subprocess.run(
                     [sys.executable, str(BOARD), "--ack"], cwd=str(root),
-                    capture_output=True, text=True).returncode
+                    capture_output=True, text=True, encoding="utf-8", errors="replace").returncode
                 self.assertEqual(rc, 0)
                 self.assertFalse(pending.exists())
                 proc_b, url_b = spawn_board(
@@ -3746,7 +3746,7 @@ class TestDocxToHtml(unittest.TestCase):
     def test_real_world_manual_stays_compact(self):
         """The repo's own Word manual: tables, lists, figures — and the
         converted HTML stays a small fraction of the 4.4 MB envelope cap."""
-        manual = Path(__file__).resolve().parents[2] / "AITCW-매뉴얼-교수자용.docx"
+        manual = Path(__file__).resolve().parents[2] / "manuals" / "AITCW-매뉴얼-교수자용.docx"
         if not manual.is_file():
             self.skipTest("manual .docx not in this checkout")
         html, assets = board._docx_to_html(manual)

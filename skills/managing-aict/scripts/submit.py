@@ -12,6 +12,14 @@ Stdlib only, Python 3.9+. Modes:
   --url URL --token TOKEN      (first run) save the classroom config, then submit
                                 (later runs: both optional, reuse the saved config)
   [--course COURSEID]          optional course identifier, saved with the config
+  [--manuscript PATH]          pin the manuscript file to send (remembered in
+                                plans/manuscript-source.txt); "default" unpins
+
+Before sending, the manuscript is checked against other manuscript-like files
+in the project: a newer one stops an unpinned submit until the student says
+which file is the paper. After a submit, the exact content sent is written to
+plans/.aict-submitted/board.html (a read-only board) and opened in the
+browser, so the student sees what went in.
 
 Exit codes: 0 submitted (created or replay) / dry-run printed; 1 usage,
 environment, or server-rejection error.
@@ -23,12 +31,24 @@ import binascii
 import copy
 import datetime
 import hashlib
+import html
 import json
+import os
+import re
 import subprocess
 import sys
 import urllib.error
 import urllib.request
 from pathlib import Path
+
+# Console output is UTF-8 whatever the OS locale: on Korean Windows (cp949) a
+# bare print() of an em dash, or of a Korean manuscript excerpt, raises
+# UnicodeEncodeError. Same as running under PYTHONUTF8=1 (check.py does this too).
+for _stream in (sys.stdout, sys.stderr):
+    try:
+        _stream.reconfigure(encoding="utf-8", errors="replace")
+    except (AttributeError, ValueError):
+        pass
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 from signoff_gate import normalize_plan, parse_trailer  # noqa: E402
@@ -39,6 +59,12 @@ from board import (  # noqa: E402
     share_hash,
     payload_files,
     find_root,
+    manuscript_location,
+    write_manuscript_source,
+    clear_manuscript_source,
+    render_snapshot_html,
+    ensure_gitignore,
+    MANUSCRIPT_SOURCE,
 )
 import classroom  # noqa: E402
 
@@ -79,7 +105,7 @@ def _master_plan_first_commit_date(root):
     try:
         out = subprocess.run(
             ["git", "log", "--reverse", "--format=%cI", "--", "plans/master-plan.md"],
-            capture_output=True, text=True, cwd=str(root), timeout=10,
+            capture_output=True, text=True, encoding="utf-8", errors="replace", cwd=str(root), timeout=10,
         )
         if out.returncode == 0 and out.stdout.strip():
             return out.stdout.strip().splitlines()[0]
@@ -122,13 +148,13 @@ def git_log_excerpt(root, subpath="plans", max_commits=200, max_days=120):
     try:
         head = subprocess.run(
             ["git", "rev-parse", "--short", "HEAD"],
-            capture_output=True, text=True, cwd=str(root), timeout=10,
+            capture_output=True, text=True, encoding="utf-8", errors="replace", cwd=str(root), timeout=10,
         )
         if head.returncode != 0:
             return empty
         branch = subprocess.run(
             ["git", "rev-parse", "--abbrev-ref", "HEAD"],
-            capture_output=True, text=True, cwd=str(root), timeout=10,
+            capture_output=True, text=True, encoding="utf-8", errors="replace", cwd=str(root), timeout=10,
         )
     except Exception:
         return empty
@@ -144,7 +170,7 @@ def git_log_excerpt(root, subpath="plans", max_commits=200, max_days=120):
                 "--format=%h\x1f%aI\x1f%an\x1f%s",
                 "--", subpath,
             ],
-            capture_output=True, text=True, cwd=str(root), timeout=15,
+            capture_output=True, text=True, encoding="utf-8", errors="replace", cwd=str(root), timeout=15,
         )
         if log.returncode == 0:
             for line in log.stdout.splitlines():
@@ -197,6 +223,166 @@ def preflight_warnings(payload):
                     "%s: could not normalize plan content (%s)" % (v["path"], e)
                 )
     return warnings
+
+
+# --- Manuscript check: is the file being sent the paper the student is writing? ---
+
+MANUSCRIPT_EXTS = (".md", ".docx", ".hwp", ".hwpx")
+# Word/HWP files at the project root always count. Markdown files (README,
+# CLAUDE.md, notes) and files one folder down count only when their own or
+# their folder's name says they are the paper.
+_PAPER_NAME_RE = re.compile(
+    r"manuscript|paper|draft|thesis|article|원고|논문|초고|본문", re.IGNORECASE)
+_SKIP_DIRS = {"plans", "node_modules", "venv", "env", "renv", "__pycache__",
+              "site-packages"}
+# A copy keeps its source's mtime, and some filesystems store it at 2-second
+# resolution — so "newer" means newer by more than this.
+_MTIME_SLACK = 2.0
+
+
+def _stamp(ts):
+    return datetime.datetime.fromtimestamp(ts).strftime("%Y-%m-%d %H:%M")
+
+
+def _iso_stamp(iso):
+    try:
+        return datetime.datetime.fromisoformat(iso).astimezone().strftime("%Y-%m-%d %H:%M")
+    except (TypeError, ValueError):
+        return iso or "?"
+
+
+def manuscript_candidates(root, exclude=None):
+    """[(project-relative path, mtime)] of files that look like the paper,
+    newest first, without `exclude` (the file being sent). Word's "~$" lock
+    files are skipped."""
+    root = Path(root)
+    found = []
+
+    def consider(p, named):
+        if p.name.startswith("~$") or p.suffix.lower() not in MANUSCRIPT_EXTS:
+            return
+        if p.suffix.lower() == ".md" and not named:
+            return
+        try:
+            rel = p.relative_to(root).as_posix()
+            if rel != exclude and p.is_file():
+                found.append((rel, p.stat().st_mtime))
+        except (ValueError, OSError):
+            pass
+
+    try:
+        top = sorted(root.iterdir())
+    except OSError:
+        top = []
+    for p in top:
+        if p.is_file():
+            consider(p, bool(_PAPER_NAME_RE.search(p.stem)))
+        elif p.is_dir() and not p.name.startswith(".") and p.name not in _SKIP_DIRS:
+            dir_named = bool(_PAPER_NAME_RE.search(p.name))
+            try:
+                for f in sorted(p.iterdir()):
+                    if f.is_file() and (dir_named or _PAPER_NAME_RE.search(f.stem)):
+                        consider(f, True)
+            except OSError:
+                pass
+    for name in ("manuscript.md", "manuscript.docx", "manuscript.hwp", "manuscript.hwpx"):
+        consider(root / "plans" / name, True)
+    found.sort(key=lambda c: c[1], reverse=True)
+    return found
+
+
+def _excerpt(manuscript, n=160):
+    """The manuscript's opening words, as plain text."""
+    text = manuscript.get("content") or ""
+    if manuscript.get("format") == "docx-html":
+        text = html.unescape(re.sub(r"<[^>]+>", " ", text))
+    else:
+        text = re.sub(r"!\[[^\]]*\]\([^)]*\)|[#*_>`|]", " ", text)
+    text = re.sub(r"\s+", " ", text).strip()
+    return text if len(text) <= n else text[:n].rstrip() + "…"
+
+
+def manuscript_check(root, payload):
+    """What the submission's manuscript is and whether it looks stale:
+    {path, format, modifiedAt, pinned, missing, excerpt, note, newer}.
+    `newer` lists [(path, mtime)] of manuscript-like files saved after the
+    one being sent — or all of them, when there is none to send."""
+    loc = manuscript_location(root)
+    m = payload["files"].get("manuscript")
+    info = {"path": None, "format": None, "modifiedAt": None, "pinned": False,
+            "missing": False, "excerpt": "", "note": None, "newer": []}
+    sent_mtime = None
+    if loc is not None:
+        p, rel, _fmt, pinned = loc
+        info.update(path=rel, pinned=pinned, missing=not p.is_file())
+        if not info["missing"]:
+            sent_mtime = p.stat().st_mtime
+    if m:
+        info.update(format=m.get("format"), modifiedAt=m.get("modifiedAt"),
+                    excerpt=_excerpt(m), note=m.get("note"))
+    info["newer"] = [c for c in manuscript_candidates(root, exclude=info["path"])
+                     if sent_mtime is None or c[1] > sent_mtime + _MTIME_SLACK]
+    return info
+
+
+_FORMAT_LABEL = {"markdown": "Markdown", "docx-html": "Word",
+                 "unsupported": "can't be previewed"}
+
+
+def manuscript_lines(info):
+    """The manuscript part of the preview, as printable lines."""
+    if info["path"] is None:
+        return ["  manuscript: none (no plans/manuscript.md or plans/manuscript.docx)"]
+    if info["missing"]:
+        return ["  manuscript: %s — MISSING (set in %s)" % (info["path"], MANUSCRIPT_SOURCE)]
+    lines = ["  manuscript: %s (%s) — saved %s" % (
+        info["path"], _FORMAT_LABEL.get(info["format"], info["format"]),
+        _iso_stamp(info["modifiedAt"]))]
+    lines.append("    chosen by: %s" % (
+        "your setting in %s" % MANUSCRIPT_SOURCE if info["pinned"]
+        else "default location (plans/manuscript.md, then plans/manuscript.docx)"))
+    if info["format"] == "unsupported" and info["note"]:
+        lines.append("    note: %s" % info["note"])
+    elif info["excerpt"]:
+        lines.append('    begins: "%s"' % info["excerpt"])
+    return lines
+
+
+def manuscript_warning(info):
+    """A warning when the manuscript being sent may not be the student's
+    current paper, else None."""
+    if info["missing"]:
+        return ("the manuscript file set in %s (%s) does not exist. Point it at your "
+                'current manuscript with --manuscript "<path>", or use --manuscript '
+                "default to go back to plans/manuscript.*." % (MANUSCRIPT_SOURCE, info["path"]))
+    if not info["newer"]:
+        return None
+    listed = "\n".join("    - %s — saved %s" % (rel, _stamp(t)) for rel, t in info["newer"][:5])
+    if info["path"] is None:
+        return ("no manuscript will be sent, but these look like one:\n%s\n"
+                '  To send one, run again with --manuscript "<path>" (remembered for '
+                "later submissions)." % listed)
+    return ("these manuscript-like files were saved AFTER the one being sent:\n%s\n"
+            "  Being sent: %s — saved %s.\n"
+            "  Which is your current paper? Run again with --manuscript \"<path>\" and "
+            "that file is sent from now on (to keep this one: --manuscript \"%s\")."
+            % (listed, info["path"], _iso_stamp(info["modifiedAt"]), info["path"]))
+
+
+def plan_versions(payload):
+    """[(component, [version, ...])] of the canonical plan versions included."""
+    return [(g["component"], [v["version"] for v in g.get("versions", [])])
+            for g in payload["files"]["executionPlans"]]
+
+
+def contents_lines(payload):
+    """The plan versions and results bundles included, as printable lines."""
+    plans = " · ".join("%s v%s" % (c, ", v".join(str(v) for v in vs))
+                       for c, vs in plan_versions(payload) if vs) or "none"
+    results = " · ".join(
+        "%s r%s" % (g["component"], ", r".join(str(b.get("resultsVersion")) for b in g["results"]))
+        for g in payload["files"]["executionPlans"] if g.get("results")) or "none"
+    return ["  plans: %s" % plans, "  results: %s" % results]
 
 
 # --- Envelope construction ---
@@ -368,9 +554,14 @@ def envelope_summary(envelope):
     }
 
 
-def print_dry_run(envelope, warnings, uploads=None):
+def print_dry_run(envelope, warnings, uploads=None, manuscript=None):
     summary = envelope_summary(envelope)
     print("Submission envelope preview (dry run — no network call made)")
+    if manuscript is not None:
+        for line in manuscript_lines(manuscript):
+            print(line)
+    for line in contents_lines(envelope["payload"]):
+        print(line)
     print("  size: %d bytes (%.1f KB)" % (summary["sizeBytes"], summary["sizeBytes"] / 1024.0))
     if uploads:
         total = sum(len(b) for b in uploads.values())
@@ -400,6 +591,9 @@ def print_dry_run(envelope, warnings, uploads=None):
         print("  pre-flight warnings:")
         for w in warnings:
             print("    - %s" % w)
+    mw = manuscript_warning(manuscript) if manuscript is not None else None
+    if mw:
+        print("  MANUSCRIPT CHECK: " + mw)
 
 
 # --- Network submit ---
@@ -484,6 +678,8 @@ def upload_assets(url, token, envelope, uploads):
 
 
 def submit_envelope(url, token, envelope):
+    """POST the envelope. Returns the server's answer for a created or
+    replayed submission; dies on anything else."""
     endpoint = url.rstrip("/") + "/api/submissions"
     body = envelope_body(envelope)
     req = urllib.request.Request(
@@ -503,31 +699,29 @@ def submit_envelope(url, token, envelope):
         code = e.code
         data = _read_error_body(e)
         _handle_error_response(code, data)
-        return
+        return None
     except (urllib.error.URLError, OSError):
         die(
             "Classroom server unreachable (the server may be down, or the "
             "URL may be wrong). Check the URL with your instructor and try "
             "again."
         )
-        return
-    _handle_response(code, data)
+        return None
+    return _handle_response(code, data)
 
 
 def _handle_response(code, data):
     if code == 201 and data.get("status") == "created":
         print("Submitted — new submission %s recorded." % data.get("submissionId", "?"))
         print_reverify(data.get("reverify", []))
-        print("Run /ait:check to see any instructor feedback.")
-        sys.exit(0)
+        return data
     if code == 200 and data.get("status") == "replay":
         print(
             "Nothing new to send — identical content was already submitted "
             "(submission %s)." % data.get("submissionId", "?")
         )
         print_reverify(data.get("reverify", []))
-        print("Run /ait:check to see any instructor feedback.")
-        sys.exit(0)
+        return data
     die(
         "Classroom server returned an unexpected %s response: %s"
         % (code, json.dumps(data)[:500])
@@ -558,6 +752,64 @@ def _handle_error_response(code, data):
     die("Classroom server returned HTTP %s: %s" % (code, json.dumps(data)[:500]))
 
 
+# --- Receipt: what was sent, as a read-only board ---
+
+SUBMITTED_DIR = ".aict-submitted"
+
+
+def write_receipt(root, envelope, result, manuscript):
+    """Write plans/.aict-submitted/{board.html,receipt.json}: the payload
+    exactly as sent, as a read-only board whose banner names the submission,
+    the manuscript file and its saved time, and the plan versions. Each
+    submit overwrites it — it is the latest send, not a history (/ait:check
+    --history is that). `envelope` is the inline one, so figures are embedded
+    and the page works offline. Returns the board path."""
+    payload = envelope["payload"]
+    receipt = {
+        "status": result.get("status"),
+        "submissionId": result.get("submissionId"),
+        "manuscript": None if manuscript["path"] is None else {
+            "path": manuscript["path"],
+            "modifiedAt": manuscript["modifiedAt"],
+            "pinned": manuscript["pinned"],
+        },
+        "plans": [{"component": c, "versions": vs} for c, vs in plan_versions(payload)],
+        "results": [{"component": g["component"],
+                     "versions": [b.get("resultsVersion") for b in g["results"]]}
+                    for g in payload["files"]["executionPlans"] if g.get("results")],
+    }
+    board_payload = dict(payload, mode="snapshot", shareHash=envelope["idempotencyKey"],
+                         snapshot={"submittedAt": envelope["submittedAt"], "releasedAt": None,
+                                   "comments": [], "receipt": receipt})
+    plans = Path(root) / "plans"
+    ensure_gitignore(plans)
+    out = plans / SUBMITTED_DIR
+    out.mkdir(parents=True, exist_ok=True)
+    board_path = out / "board.html"
+    board_path.write_text(render_snapshot_html(board_payload), encoding="utf-8")
+    (out / "receipt.json").write_text(json.dumps(
+        dict(receipt, submittedAt=envelope["submittedAt"], idempotencyKey=envelope["idempotencyKey"]),
+        ensure_ascii=False, indent=1), encoding="utf-8")
+    return board_path
+
+
+def print_receipt(payload, manuscript, board_path):
+    print("What was sent:")
+    for line in manuscript_lines(manuscript)[:1] + contents_lines(payload):
+        print(line)
+    print("Submitted copy (read-only board): %s" % board_path.as_posix())
+
+
+def open_receipt(board_path):
+    if os.environ.get("AICT_NO_BOARD"):
+        return
+    try:
+        import webbrowser
+        webbrowser.open(board_path.resolve().as_uri())
+    except Exception:
+        pass
+
+
 # --- CLI ---
 
 def parse_args(argv=None):
@@ -567,7 +819,25 @@ def parse_args(argv=None):
     ap.add_argument("--url", default=None, help="classroom server base URL")
     ap.add_argument("--token", default=None, help="personal bearer token from the instructor")
     ap.add_argument("--course", dest="course_id", default=None, metavar="COURSEID")
+    ap.add_argument("--manuscript", default=None, metavar="PATH",
+                     help="the manuscript file to send, remembered for later "
+                          'submissions; "default" goes back to plans/manuscript.*')
     return ap.parse_args(argv)
+
+
+def apply_manuscript_arg(root, value):
+    if value is None:
+        return
+    if value.strip().lower() == "default":
+        clear_manuscript_source(root)
+        print("Manuscript: back to the default location (plans/manuscript.*).")
+        return
+    try:
+        rel = write_manuscript_source(root, value)
+    except ValueError as e:
+        die("--manuscript: %s" % e)
+    print("Manuscript set to %s (saved in %s — commit it with your plans)."
+          % (rel, MANUSCRIPT_SOURCE))
 
 
 def main():
@@ -577,6 +847,7 @@ def main():
         die("no plans/master-plan.md found — run /ait:init first")
 
     cfg = classroom.read_classroom_config(root)
+    apply_manuscript_arg(root, args.manuscript)
 
     if args.dry_run:
         course_id = (
@@ -585,9 +856,10 @@ def main():
         )
         payload = collect_payload(root, "submission", None)
         warnings = preflight_warnings(payload)
+        manuscript = manuscript_check(root, payload)
         envelope = build_envelope(root, course_id, payload=payload)
         uploads = externalize_assets(envelope)
-        print_dry_run(envelope, warnings, uploads)
+        print_dry_run(envelope, warnings, uploads, manuscript)
         sys.exit(0)
 
     url = args.url or (cfg.get("serverUrl") if cfg else None)
@@ -612,6 +884,17 @@ def main():
     payload = collect_payload(root, "submission", None)
     for w in preflight_warnings(payload):
         print("submit: pre-flight warning: %s" % w, file=sys.stderr)
+    # The manuscript is what a student most easily sends a stale copy of (a
+    # Word file edited outside plans/). An unpinned manuscript with a newer
+    # look-alike, or a pinned file that is gone, stops here: one more question
+    # beats silently sending the wrong paper. A pinned file is the student's
+    # explicit choice, so a newer look-alike only warns.
+    manuscript = manuscript_check(root, payload)
+    mw = manuscript_warning(manuscript)
+    if mw and (manuscript["missing"] or (manuscript["path"] and not manuscript["pinned"])):
+        die("not sent — " + mw)
+    if mw:
+        print("submit: manuscript check: %s" % mw, file=sys.stderr)
 
     inline_envelope = build_envelope(root, course_id, payload=payload)
     envelope = copy.deepcopy(inline_envelope)
@@ -631,7 +914,12 @@ def main():
                 "files yet, and the submission is over its 4.5 MB limit — "
                 "ask your instructor to update the server."
             )
-    submit_envelope(url, token, envelope)
+    result = submit_envelope(url, token, envelope)
+    board_path = write_receipt(root, inline_envelope, result, manuscript)
+    print_receipt(payload, manuscript, board_path)
+    print("Run /ait:check to see any instructor feedback.")
+    open_receipt(board_path)
+    sys.exit(0)
 
 
 if __name__ == "__main__":

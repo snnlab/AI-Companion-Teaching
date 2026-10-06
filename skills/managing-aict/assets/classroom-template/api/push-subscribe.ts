@@ -12,6 +12,11 @@
 //        returns: { endpoint, keys: { p256dh, auth } }.
 // DELETE /api/push-subscribe — remove one subscription (body { endpoint }),
 //        used when the student turns notifications off.
+// POST   /api/push-subscribe?test=1 — send a test notification to every
+//        device the calling student has registered, and answer
+//        { ok, sent, pruned }. The /me page's "Send a test notification"
+//        button: lets a student check, on the spot, that notifications reach
+//        this device (or learn that the server holds none for them).
 //
 // Not in the instructor-cookie gate: this route authenticates itself with
 // the student bearer token, exactly like /api/my-comments. Keep it in
@@ -19,7 +24,13 @@
 import type { VercelRequest, VercelResponse } from "@vercel/node";
 import { SECURITY_HEADERS } from "../lib/gate.js";
 import { resolveToken } from "../lib/roster.js";
-import { putSub, deleteSubByEndpoint, isPushSubscription } from "../lib/push.js";
+import {
+  putSub,
+  deleteSubByEndpoint,
+  isPushSubscription,
+  readVapid,
+  sendToStudent,
+} from "../lib/push.js";
 
 export interface RunResult { status: number; json: unknown }
 export type HeaderBag = Record<string, string | string[] | undefined>;
@@ -37,6 +48,7 @@ export async function run(
   headers: HeaderBag,
   body: unknown,
   env: Record<string, string | undefined>,
+  opts: { test?: boolean } = {},
 ): Promise<RunResult> {
   if (method === "GET") return { status: 200, json: { key: env.VAPID_PUBLIC_KEY ?? null } };
   if (method !== "POST" && method !== "DELETE") {
@@ -49,6 +61,19 @@ export async function run(
   const pepper = env.ROSTER_TOKEN_PEPPER ?? "";
   const studentId = await resolveToken(blobToken, pepper, token);
   if (!studentId) return { status: 401, json: { error: "invalid_token" } };
+
+  if (method === "POST" && opts.test) {
+    const vapid = readVapid(env);
+    if (!vapid) return { status: 400, json: { error: "push_not_configured" } };
+    const base = env.VERCEL_PROJECT_PRODUCTION_URL ? `https://${env.VERCEL_PROJECT_PRODUCTION_URL}` : "";
+    const r = await sendToStudent(blobToken, studentId, vapid, {
+      title: "Test notification",
+      body: "Notifications from your classroom reach this device.",
+      url: `${base}/me`,
+      tag: "aict-test",
+    });
+    return { status: 200, json: { ok: true, ...r } };
+  }
 
   let parsed: unknown = body;
   if (typeof body === "string") {
@@ -70,7 +95,8 @@ export async function run(
 }
 
 export default async function handler(req: VercelRequest, res: VercelResponse): Promise<void> {
-  const r = await run(req.method ?? "POST", req.headers as HeaderBag, req.body, process.env);
+  const test = (req.query as Record<string, unknown> | undefined)?.test !== undefined;
+  const r = await run(req.method ?? "POST", req.headers as HeaderBag, req.body, process.env, { test });
   for (const [k, v] of Object.entries(SECURITY_HEADERS)) res.setHeader(k, v);
   res.status(r.status).json(r.json);
 }

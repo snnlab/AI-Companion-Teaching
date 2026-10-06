@@ -38,7 +38,7 @@ def is_newer(remote, installed):
 def read_state(path):
     state = dict(DEFAULT_STATE)
     try:
-        loaded = json.loads(Path(path).read_text())
+        loaded = json.loads(Path(path).read_text(encoding="utf-8"))
         if isinstance(loaded, dict):
             state.update({k: loaded[k] for k in DEFAULT_STATE if k in loaded})
     except (OSError, ValueError):
@@ -167,7 +167,7 @@ def fetch_text(url, timeout=3.0):
 
 def _read_json_file(path):
     try:
-        return json.loads(Path(path).read_text())
+        return json.loads(Path(path).read_text(encoding="utf-8"))
     except (OSError, ValueError):
         return None
 

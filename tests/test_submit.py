@@ -279,26 +279,24 @@ class TestResponseHandling(unittest.TestCase):
     def tearDown(self):
         submit.urllib.request.urlopen = self._orig
 
-    def test_201_created_exits_zero(self):
+    def test_201_created_returns_the_answer(self):
         submit.urllib.request.urlopen = self._fake_urlopen_success(
             201, {"status": "created", "submissionId": "s1", "reverify": []})
         out = io.StringIO()
         import contextlib
         with contextlib.redirect_stdout(out):
-            with self.assertRaises(SystemExit) as cm:
-                submit.submit_envelope("https://cls.example.edu", "tok", {"x": 1})
-        self.assertEqual(cm.exception.code, 0)
+            data = submit.submit_envelope("https://cls.example.edu", "tok", {"x": 1})
+        self.assertEqual(data["submissionId"], "s1")
         self.assertIn("Submitted", out.getvalue())
 
-    def test_200_replay_exits_zero(self):
+    def test_200_replay_returns_the_answer(self):
         submit.urllib.request.urlopen = self._fake_urlopen_success(
             200, {"status": "replay", "submissionId": "s1", "reverify": []})
         out = io.StringIO()
         import contextlib
         with contextlib.redirect_stdout(out):
-            with self.assertRaises(SystemExit) as cm:
-                submit.submit_envelope("https://cls.example.edu", "tok", {"x": 1})
-        self.assertEqual(cm.exception.code, 0)
+            data = submit.submit_envelope("https://cls.example.edu", "tok", {"x": 1})
+        self.assertEqual(data["status"], "replay")
         self.assertIn("already submitted", out.getvalue())
 
     def test_401_dies_with_code_1(self):
@@ -478,6 +476,174 @@ class TestUploadAssets(unittest.TestCase):
 def contextlib_redirect():
     import contextlib
     return contextlib.redirect_stdout(io.StringIO())
+
+
+def _docx(path, text, mtime):
+    """A minimal Word file whose only paragraph is `text`, saved at `mtime`."""
+    import zipfile
+    w = "http://schemas.openxmlformats.org/wordprocessingml/2006/main"
+    with zipfile.ZipFile(path, "w") as z:
+        z.writestr("[Content_Types].xml",
+                   '<?xml version="1.0"?><Types xmlns="http://schemas.openxmlformats.org/'
+                   'package/2006/content-types"/>')
+        z.writestr("word/document.xml",
+                   '<?xml version="1.0" encoding="UTF-8"?><w:document xmlns:w="%s"><w:body>'
+                   "<w:p><w:r><w:t>%s</w:t></w:r></w:p></w:body></w:document>" % (w, text))
+    os.utime(path, (mtime, mtime))
+
+
+def _run_submit(root, *args, env_extra=None):
+    """submit.py in a subprocess on a cp949 console (Korean Windows)."""
+    env = {**os.environ, "PYTHONIOENCODING": "cp949", "AICT_NO_BOARD": "1"}
+    env.pop("PYTHONUTF8", None)
+    env.update(env_extra or {})
+    return subprocess.run(
+        [sys.executable, str(SUBMIT), *args], cwd=str(root), capture_output=True,
+        timeout=60, env=env, encoding="utf-8", errors="replace")
+
+
+class TestManuscriptCheck(unittest.TestCase):
+    """2026-10-04: a stale plans/manuscript.docx went out while the student
+    was writing in a Word file at the project root."""
+
+    def _stale_project(self, d):
+        root = Path(d)
+        make_project(root)
+        now = datetime.datetime.now().timestamp()
+        _docx(root / "plans" / "manuscript.docx", "옛 원고 — 이론적 배경 없음", now - 2 * 86400)
+        _docx(root / "APOE4 원고.docx", "새 원고 — 이론적 배경 완성", now)
+        (root / "README.md").write_text("readme — not a paper\n", encoding="utf-8")
+        return root
+
+    def test_dry_run_shows_file_saved_time_excerpt_and_newer_candidate(self):
+        with tempfile.TemporaryDirectory() as d:
+            root = self._stale_project(d)
+            proc = _run_submit(root, "--dry-run")
+            self.assertEqual(proc.returncode, 0, proc.stderr)
+            out = proc.stdout
+            self.assertIn("manuscript: plans/manuscript.docx (Word) — saved", out)
+            self.assertIn("옛 원고", out)
+            self.assertIn("MANUSCRIPT CHECK", out)
+            self.assertIn("- APOE4 원고.docx — saved", out)
+            self.assertNotIn("README.md", out)
+            self.assertIn("plans: 01-data-prep v1", out)
+
+    def test_unpinned_submit_with_a_newer_candidate_is_not_sent(self):
+        with tempfile.TemporaryDirectory() as d:
+            root = self._stale_project(d)
+            # Unreachable server: reaching the network would be a different error.
+            proc = _run_submit(root, "--url", "http://127.0.0.1:1", "--token", "x")
+            self.assertEqual(proc.returncode, 1)
+            self.assertIn("not sent", proc.stderr)
+            self.assertIn("APOE4 원고.docx", proc.stderr)
+
+    def test_pinning_sends_that_file_from_then_on(self):
+        with tempfile.TemporaryDirectory() as d:
+            root = self._stale_project(d)
+            proc = _run_submit(root, "--dry-run", "--manuscript", "APOE4 원고.docx")
+            self.assertEqual(proc.returncode, 0, proc.stderr)
+            self.assertIn("APOE4 원고.docx", (root / "plans" / "manuscript-source.txt")
+                          .read_text(encoding="utf-8"))
+            payload = board.collect_payload(root, "submission", None)
+            m = payload["files"]["manuscript"]
+            self.assertEqual(m["path"], "APOE4 원고.docx")
+            self.assertIn("새 원고", m["content"])
+            self.assertTrue(m["modifiedAt"])
+            info = submit.manuscript_check(root, payload)
+            self.assertTrue(info["pinned"])
+            self.assertEqual(info["newer"], [])
+            # "default" unpins
+            _run_submit(root, "--dry-run", "--manuscript", "default")
+            self.assertFalse((root / "plans" / "manuscript-source.txt").exists())
+
+    def test_pin_outside_the_project_is_refused(self):
+        with tempfile.TemporaryDirectory() as d, tempfile.TemporaryDirectory() as other:
+            root = self._stale_project(d)
+            outside = Path(other) / "paper.docx"
+            _docx(outside, "x", datetime.datetime.now().timestamp())
+            proc = _run_submit(root, "--dry-run", "--manuscript", str(outside))
+            self.assertEqual(proc.returncode, 1)
+            self.assertIn("outside this project", proc.stderr)
+
+    def test_missing_pinned_file_is_reported_not_replaced(self):
+        with tempfile.TemporaryDirectory() as d:
+            root = self._stale_project(d)
+            board.write_manuscript_source(root, str(root / "APOE4 원고.docx"))
+            (root / "APOE4 원고.docx").unlink()
+            payload = board.collect_payload(root, "submission", None)
+            m = payload["files"]["manuscript"]
+            self.assertEqual(m["format"], "unsupported")
+            self.assertIn("missing", m["note"])
+            info = submit.manuscript_check(root, payload)
+            self.assertTrue(info["missing"])
+            self.assertIn("does not exist", submit.manuscript_warning(info))
+
+    def test_a_copy_with_the_same_saved_time_is_not_newer(self):
+        with tempfile.TemporaryDirectory() as d:
+            root = Path(d)
+            make_project(root)
+            t = datetime.datetime.now().timestamp()
+            _docx(root / "plans" / "manuscript.docx", "same", t)
+            _docx(root / "draft.docx", "same", t)
+            payload = board.collect_payload(root, "submission", None)
+            self.assertEqual(submit.manuscript_check(root, payload)["newer"], [])
+
+    def test_md_and_subfolder_files_count_only_when_named_like_a_paper(self):
+        with tempfile.TemporaryDirectory() as d:
+            root = Path(d)
+            make_project(root)
+            (root / "notes.md").write_text("x", encoding="utf-8")
+            (root / "논문 초고.md").write_text("x", encoding="utf-8")
+            (root / "output").mkdir()
+            _docx(root / "output" / "table1.docx", "t", 0)
+            (root / "paper").mkdir()
+            _docx(root / "paper" / "v3.docx", "p", 0)
+            _docx(root / "~$APOE4.docx", "lock", 0)
+            names = [rel for rel, _ in submit.manuscript_candidates(root)]
+            self.assertIn("논문 초고.md", names)
+            self.assertIn("paper/v3.docx", names)
+            self.assertNotIn("notes.md", names)
+            self.assertNotIn("output/table1.docx", names)
+            self.assertNotIn("~$APOE4.docx", names)
+
+
+class TestReceipt(unittest.TestCase):
+    def test_receipt_board_and_record_name_what_was_sent(self):
+        with tempfile.TemporaryDirectory() as d:
+            root = Path(d)
+            make_project(root)
+            _docx(root / "plans" / "manuscript.docx", "본문", datetime.datetime.now().timestamp())
+            payload = board.collect_payload(root, "submission", None)
+            envelope = submit.build_envelope(root, None, payload=payload)
+            info = submit.manuscript_check(root, payload)
+            path = submit.write_receipt(
+                root, envelope, {"status": "created", "submissionId": "sub-9"}, info)
+            self.assertEqual(path, root / "plans" / ".aict-submitted" / "board.html")
+            rec = json.loads((path.parent / "receipt.json").read_text(encoding="utf-8"))
+            self.assertEqual(rec["submissionId"], "sub-9")
+            self.assertEqual(rec["manuscript"]["path"], "plans/manuscript.docx")
+            self.assertTrue(rec["manuscript"]["modifiedAt"])
+            self.assertEqual(rec["plans"], [{"component": "01-data-prep", "versions": [1]}])
+            html = path.read_text(encoding="utf-8")
+            self.assertIn('"receipt"', html)
+            self.assertIn('"mode": "snapshot"', html.replace('"mode":"snapshot"', '"mode": "snapshot"'))
+            self.assertIn("/.aict-submitted/",
+                          (root / "plans" / ".gitignore").read_text(encoding="utf-8"))
+            self.assertTrue(board.fingerprint_excluded(".aict-submitted"))
+
+
+class TestConsoleEncoding(unittest.TestCase):
+    def test_dry_run_on_a_cp949_console_with_korean_git_history(self):
+        with tempfile.TemporaryDirectory() as d:
+            root = Path(d)
+            make_project(root)
+            _init_git(root)
+            _commit(root, "plans/execution/01-data-prep/v2.md", "# v2\n", "계획 — 초안",
+                    _iso_days_ago(1))
+            proc = _run_submit(root, "--dry-run")
+            self.assertEqual(proc.returncode, 0, proc.stderr)
+            self.assertNotIn("Traceback", proc.stderr)
+            self.assertIn("dry run — no network call made", proc.stdout)
 
 
 if __name__ == "__main__":

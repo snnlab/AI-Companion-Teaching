@@ -31,7 +31,7 @@ def classroom_config_path(root):
 def read_classroom_config(root):
     name = "%s.json" % web_project_hash(root)
     try:
-        return json.loads((_classroom_data_dir() / name).read_text())
+        return json.loads((_classroom_data_dir() / name).read_text(encoding="utf-8"))
     except (OSError, ValueError):
         return None
 
@@ -64,11 +64,11 @@ def _legacy_seen_comments_path(root):
 
 def read_pulled_comment_ids(root):
     try:
-        return set(json.loads(pulled_comments_path(root).read_text()))
+        return set(json.loads(pulled_comments_path(root).read_text(encoding="utf-8")))
     except (OSError, ValueError):
         pass
     try:
-        legacy = json.loads(_legacy_seen_comments_path(root).read_text())
+        legacy = json.loads(_legacy_seen_comments_path(root).read_text(encoding="utf-8"))
     except (OSError, ValueError):
         return set()
     ids = set()

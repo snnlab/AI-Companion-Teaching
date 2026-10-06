@@ -35,6 +35,7 @@ import { SentIdsContext } from "./lib/sentIds";
 import { fmtDate } from "./lib/fmtDate";
 import { useHeaderOffset, useMediaQuery } from "./lib/layoutHooks";
 import ConnBanner from "./components/ConnBanner";
+import SubmitReceiptBanner from "./components/SubmitReceiptBanner";
 import {
   classifyPostFailure,
   initialConn,
@@ -1350,8 +1351,12 @@ export default function App({ data }: { data: BoardData }) {
             — regenerate with /ait:board --export
           </div>
         )}
-        {snapshot && data.snapshot && (
+        {snapshot && data.snapshot?.receipt && (
+          <SubmitReceiptBanner snapshot={data.snapshot} receipt={data.snapshot.receipt} />
+        )}
+        {snapshot && data.snapshot && !data.snapshot.receipt && (
           <div className="border-t border-blue-200 dark:border-blue-900 bg-blue-50 dark:bg-blue-950 px-5 py-1.5 text-center text-xs text-blue-900 dark:text-blue-200">
+            {data.snapshot.version ? `Version ${data.snapshot.version} · ` : ""}
             Read-only copy of your submission from {fmtDate(data.snapshot.submittedAt)}
             {data.snapshot.releasedAt ? ` · feedback sent ${fmtDate(data.snapshot.releasedAt)}` : ""}
             {" "}— click a highlight to read your instructor’s comment

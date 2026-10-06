@@ -1,5 +1,94 @@
 # Changelog
 
+## [0.15.0] - 2026-10-06
+
+From student feedback on `/me`: notifications in Chrome and Whale arrived
+only sometimes or late, and there was no way to go through submissions
+version by version. **Instructors: redeploy the classroom server.** Refresh
+the deploy directory from `classroom-template/` (it now ships a new
+`me.html` and `sw.js`), regenerate `index.html` and `me-board.html` (see
+`/ait:host` `--init`), then `--deploy`.
+
+### Added
+- **Submissions are numbered versions.** `/me` lists every submission as
+  *Version N* (oldest = 1; a number never changes). A version not yet
+  reviewed shows only "Waiting for review": its content and comments still
+  stay hidden until **Send feedback to student**. **Open version** opens a
+  reviewed version's board. There, Older / Newer and a version list move
+  between reviewed versions, and the header says "Version N of M".
+  `/ait:check --history` uses the same numbers, and `--open v<N>` opens
+  Version N.
+- **"Send a test notification"** on `/me` sends a test to every device the
+  server holds for the student and says how many there were. The page also
+  has a **"Not getting notifications?"** checklist covering:
+  - the browser must be running;
+  - Windows notification settings and Do not disturb;
+  - the site permission.
+  The test goes through the existing `/api/push-subscribe` function, so the
+  Hobby-plan function count is unchanged.
+- **`/me` refreshes itself.** While it is open it checks for new feedback
+  every two minutes and marks the tab "(New)", so feedback shows up there even
+  when a notification is missed. A badge is cleared only while the page is
+  actually visible.
+- **The roster says when a send notified nobody.** It shows "No notification
+  device is registered for this student" when that is the case, and "sent to
+  N device(s)" instead of "delivered", which the server cannot know.
+
+### Fixed
+- **Notifications are held longer and sent promptly.** The push service now
+  keeps a message for 7 days, not 24 hours. On a desktop a push arrives only
+  while Chrome/Whale is running, so a browser closed for a day used to lose
+  it. Messages are now sent with high urgency, so an idle device is woken.
+- **A lapsed subscription repairs itself.** `/me` used to show
+  "notifications are on" without telling the server again. A subscription
+  the server had dropped, or one made under an older key, stayed dead
+  silently. Now every visit to `/me` or the history board re-registers it,
+  and a subscription under an old key is replaced.
+- **The notification stays on screen** until it is dismissed, instead of
+  sliding into the Windows Action Center after a few seconds. It names the
+  submission ("…feedback on your submission of Oct 4, 20:06"). Clicking it
+  opens that version's board, moving an open `/me` tab there. Its fallback
+  text is in English like the rest of the UI.
+
+## [0.14.0] - 2026-10-06
+
+From a student report: `/ait:submit` sent a two-day-old copy of
+`plans/manuscript.docx` while the student was writing in a Word file at the
+project root, and nothing in the output showed it. No server redeploy is
+needed. Instructors who regenerate the roster's `index.html` also get the
+manuscript's saved time on the Manuscript tab.
+
+### Added
+- **`/ait:submit` checks the manuscript before sending.** The dry run starts
+  with the manuscript: which file, when it was last saved, and its opening
+  words. Then it lists the plan versions and results bundles included. If
+  another manuscript-like file was saved more recently, the dry run warns
+  with both files and their saved times. Such files are Word/HWP files at the
+  project root, `plans/manuscript.*`, and files whose name or folder says
+  manuscript/paper/draft/원고/논문. With that warning, a real submit refuses
+  to send until the student picks a file.
+- **The manuscript can live anywhere in the project.** `--manuscript "<path>"`
+  pins the file in `plans/manuscript-source.txt` (committed). From then on
+  the board and every submit use that file. `--manuscript default` removes
+  the pin. A pinned file that disappears is reported as missing and never
+  silently replaced by an old `plans/` copy. The live board refreshes when
+  the pinned file is saved.
+- **A submit opens what was sent.** After a created or replayed submission,
+  `plans/.aict-submitted/board.html` (git-ignored, replaced by each submit)
+  opens in the browser. It is a read-only board of exactly the content sent,
+  with a banner naming the submission id and time, the manuscript file and
+  its saved time, and the plan and results versions. The terminal prints the
+  same summary under `What was sent:`.
+- **The Manuscript tab shows the file and its saved time** above the text,
+  and the printed copy carries them too.
+
+### Fixed
+- **Korean Windows (cp949) no longer crashes the scripts.** `submit.py` died
+  on its own em dash (`UnicodeEncodeError`), and git output with Korean
+  commit subjects failed to decode (`UnicodeDecodeError` in subprocess
+  reader threads). All entry scripts now write UTF-8 to the console. Every
+  `git`/`vercel`/`gh` call decodes UTF-8, as if `PYTHONUTF8=1` were set.
+
 ## [0.13.1] - 2026-10-02
 
 ### Fixed

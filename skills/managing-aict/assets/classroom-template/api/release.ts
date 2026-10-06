@@ -14,11 +14,21 @@ import type { VercelRequest, VercelResponse } from "@vercel/node";
 import { isAuthed, type HeaderBag } from "../lib/auth.js";
 import { SECURITY_HEADERS } from "../lib/gate.js";
 import { IDEMPOTENCY_KEY_RE } from "../lib/validate.js";
-import { resolveShareHashOwner } from "../lib/submissions.js";
+import { listSubmissionMeta, resolveShareHashOwner } from "../lib/submissions.js";
 import { getRelease, putRelease } from "../lib/release.js";
 import { readVapid, sendToStudent } from "../lib/push.js";
 
 export interface RunResult { status: number; json: unknown }
+
+// "Oct 4, 20:06" as the student wrote it: submittedAt carries the student's
+// own UTC offset, so read the wall-clock digits rather than converting to
+// the server's (UTC) zone.
+const MONTHS = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
+export function pushDate(iso: string): string {
+  const m = /^(\d{4})-(\d{2})-(\d{2})T(\d{2}):(\d{2})/.exec(iso);
+  if (!m) return iso;
+  return `${MONTHS[Number(m[2]) - 1] ?? m[2]} ${Number(m[3])}, ${m[4]}:${m[5]}`;
+}
 
 function firstQueryValue(v: string | string[] | undefined): string | null {
   if (Array.isArray(v)) return v[0] ?? null;
@@ -77,10 +87,16 @@ export async function run(
         const base = env.VERCEL_PROJECT_PRODUCTION_URL
           ? `https://${env.VERCEL_PROJECT_PRODUCTION_URL}`
           : "";
+        // Name the submission ("your submission of Oct 4") so a student
+        // with several knows which one, and land the click on that version.
+        const meta = await listSubmissionMeta(blobToken, owner).catch(() => []);
+        const submittedAt = meta.find((m) => m.idempotencyKey === shareHash)?.submittedAt;
+        const which = submittedAt ? ` on your submission of ${pushDate(submittedAt)}` : "";
         push = await sendToStudent(blobToken, owner, vapid, {
           title: "New feedback",
-          body: `${by ?? "Your instructor"} sent you feedback.`,
-          url: `${base}/me`,
+          body: `${by ?? "Your instructor"} sent you feedback${which}.`,
+          url: `${base}/me/board?key=${shareHash}`,
+          tag: `aict-feedback-${shareHash}`,
         });
       } catch {
         push = null;

@@ -44,6 +44,38 @@ function bearerFetchPart(token: string): FetchPart {
   };
 }
 
+const when = (s: MySubmission) => {
+  const t = Date.parse(s.submittedAt ?? "");
+  return Number.isNaN(t) ? 0 : t;
+};
+
+// Version N = the submission's place among ALL of the student's submissions,
+// oldest = 1 — the same numbering /me and /ait:check --history use, so a
+// version keeps its number as new ones arrive.
+export function versionNumbers(subs: MySubmission[]): Record<string, number> {
+  const out: Record<string, number> = {};
+  [...subs].sort((a, b) => when(a) - when(b)).forEach((s, i) => {
+    out[s.shareHash] = i + 1;
+  });
+  return out;
+}
+
+// The notification lands students here, so re-register this browser's push
+// subscription with the server quietly, as /me does. The server drops a
+// subscription the push service reported gone; this restores it. Best-effort.
+async function refreshPushSubscription(token: string): Promise<void> {
+  if (!("serviceWorker" in navigator) || typeof Notification === "undefined") return;
+  if (Notification.permission !== "granted") return;
+  const reg = await navigator.serviceWorker.getRegistration("/");
+  const sub = await reg?.pushManager.getSubscription();
+  if (!sub) return;
+  await fetch("/api/push-subscribe", {
+    method: "POST",
+    headers: { Authorization: `Bearer ${token}`, "content-type": "application/json" },
+    body: JSON.stringify(sub.toJSON()),
+  });
+}
+
 function Centered({ children }: { children: ReactNode }) {
   return (
     <div className="flex min-h-screen items-center justify-center bg-stone-50 dark:bg-stone-950 px-4">
@@ -87,15 +119,19 @@ export default function StudentHistoryApp() {
       );
   }, [token]);
 
+  useEffect(() => {
+    if (token) refreshPushSubscription(token).catch(() => {});
+  }, [token]);
+
+  const numbers = useMemo(() => versionNumbers(mine?.submissions ?? []), [mine]);
+  const total = mine?.submissions.length ?? 0;
   // Released submissions only, newest first — the server serves nothing else.
   const released = useMemo(
-    () =>
-      (mine?.submissions ?? [])
-        .filter((s) => s.releasedAt)
-        .sort((a, b) => (b.submittedAt ?? "").localeCompare(a.submittedAt ?? "")),
+    () => (mine?.submissions ?? []).filter((s) => s.releasedAt).sort((a, b) => when(b) - when(a)),
     [mine],
   );
   const current = released.find((s) => s.shareHash === key) ?? released[0] ?? null;
+  const currentIndex = current ? released.indexOf(current) : -1;
 
   // Keep the address bar on the submission shown, so a reload or a shared
   // bookmark reopens the same one.
@@ -126,7 +162,12 @@ export default function StudentHistoryApp() {
           ...hydrated,
           mode: "snapshot",
           shareHash: current.shareHash,
-          snapshot: { submittedAt: body.submittedAt, releasedAt: body.releasedAt, comments },
+          snapshot: {
+            submittedAt: body.submittedAt,
+            releasedAt: body.releasedAt,
+            comments,
+            version: numbers[current.shareHash],
+          },
         };
         if (!cancelled) setLoaded((m) => ({ ...m, [current.shareHash]: data }));
       } catch (e) {
@@ -136,7 +177,7 @@ export default function StudentHistoryApp() {
     return () => {
       cancelled = true;
     };
-  }, [token, mine, current, loaded]);
+  }, [token, mine, current, loaded, numbers]);
 
   // While switching, keep the previous board mounted (same as the roster).
   const lastShown = useRef<BoardData | null>(null);
@@ -157,7 +198,7 @@ export default function StudentHistoryApp() {
   if (!current) {
     return (
       <Centered>
-        <p>No reviewed submissions yet. Your board appears here once your instructor sends feedback.</p>
+        <p>No reviewed versions yet. A version opens here once your instructor sends feedback on it.</p>
         {backLink}
       </Centered>
     );
@@ -166,33 +207,65 @@ export default function StudentHistoryApp() {
 
   return (
     <>
-      <div className="fixed bottom-4 left-4 z-40 max-w-xs rounded-lg border border-stone-300 dark:border-stone-700 bg-white dark:bg-stone-900 p-3 text-xs shadow-lg">
+      <nav
+        className="fixed bottom-4 left-4 z-40 w-72 max-w-[calc(100vw-2rem)] rounded-lg border border-stone-300 dark:border-stone-700 bg-white dark:bg-stone-900 p-3 text-xs shadow-lg"
+        aria-label="Your reviewed versions"
+      >
         <a
           className="inline-block rounded-md border border-stone-300 dark:border-stone-600 px-2.5 py-1 text-xs font-medium text-stone-700 dark:text-stone-300 hover:border-stone-500"
           href="/me"
         >
           ← My feedback
         </a>
+        <p className="mt-2 text-sm font-semibold text-stone-900 dark:text-stone-100" data-testid="version-heading">
+          Version {numbers[current.shareHash]} of {total}
+        </p>
+        <p className="text-[11px] text-stone-500 dark:text-stone-400">
+          submitted {fmtDate(current.submittedAt ?? "")}
+          {current.releasedAt ? ` · reviewed ${fmtDate(current.releasedAt)}` : ""}
+        </p>
         {released.length > 1 && (
-          <div className="mt-2 flex flex-wrap gap-1" aria-label="Your reviewed submissions">
-            {released.map((s) => (
-              <button
-                key={s.shareHash}
-                type="button"
-                className={`rounded-full border px-2 py-0.5 text-[10px] font-medium ${
-                  s.shareHash === current.shareHash
-                    ? "border-stone-900 bg-stone-900 dark:bg-stone-200 text-white dark:text-stone-900"
-                    : "border-stone-300 dark:border-stone-600 text-stone-600 hover:border-stone-500"
-                }`}
-                onClick={() => setKey(s.shareHash)}
-              >
-                {fmtDate(s.submittedAt ?? "")}
-              </button>
-            ))}
+          <div className="mt-2 flex items-center gap-1">
+            <button
+              type="button"
+              className="rounded-md border border-stone-300 dark:border-stone-600 px-2 py-1 font-medium text-stone-700 dark:text-stone-300 enabled:hover:border-stone-500 disabled:opacity-40"
+              disabled={currentIndex >= released.length - 1}
+              onClick={() => setKey(released[currentIndex + 1].shareHash)}
+              title="Older reviewed version"
+            >
+              ← Older
+            </button>
+            <select
+              className="min-w-0 flex-1 rounded-md border border-stone-300 dark:border-stone-600 bg-white dark:bg-stone-900 px-1 py-1 text-xs"
+              aria-label="Reviewed version"
+              value={current.shareHash}
+              onChange={(e) => setKey(e.target.value)}
+            >
+              {released.map((s) => (
+                <option key={s.shareHash} value={s.shareHash}>
+                  Version {numbers[s.shareHash]} · {fmtDate(s.submittedAt ?? "").slice(5, 10)}
+                </option>
+              ))}
+            </select>
+            <button
+              type="button"
+              className="rounded-md border border-stone-300 dark:border-stone-600 px-2 py-1 font-medium text-stone-700 dark:text-stone-300 enabled:hover:border-stone-500 disabled:opacity-40"
+              disabled={currentIndex <= 0}
+              onClick={() => setKey(released[currentIndex - 1].shareHash)}
+              title="Newer reviewed version"
+            >
+              Newer →
+            </button>
           </div>
         )}
-        {!shown && <p className="mt-1 text-[11px] text-stone-500">{loadError ?? "Loading this submission…"}</p>}
-      </div>
+        {total > released.length && (
+          <p className="mt-2 text-[11px] text-stone-500 dark:text-stone-400">
+            {total - released.length} version{total - released.length === 1 ? " is" : "s are"} waiting for
+            review — {total - released.length === 1 ? "it opens" : "they open"} here once feedback is sent.
+          </p>
+        )}
+        {!shown && <p className="mt-1 text-[11px] text-stone-500">{loadError ?? "Loading this version…"}</p>}
+      </nav>
       {/* key: a different submission is a different board — fresh tab/scroll state. */}
       <App key={board.shareHash} data={board} />
     </>

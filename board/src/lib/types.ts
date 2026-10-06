@@ -71,6 +71,9 @@ export interface ManuscriptFile extends BoardFile {
   // Figures, keyed by the exact href the manuscript uses (markdown) or
   // "docx-media/<name>" (Word). Present-only; values are board URLs or data: URIs.
   assets?: Record<string, string>;
+  // When the file itself was last saved (ISO, the student's offset). Absent
+  // in submissions made before v0.14.
+  modifiedAt?: string;
 }
 
 // ---- model profile (Models tab) ----
@@ -631,6 +634,20 @@ export interface SnapshotInfo {
   submittedAt: string;
   releasedAt: string | null;
   comments: StoredComment[];
+  // History board (/me/board): this submission's version number among all of
+  // the student's submissions (oldest = 1).
+  version?: number;
+  // Set only on the copy /ait:submit writes right after sending
+  // (plans/.aict-submitted/board.html): what went in, for the student to check.
+  receipt?: SubmitReceipt;
+}
+
+export interface SubmitReceipt {
+  status: "created" | "replay";
+  submissionId: string | null;
+  manuscript: { path: string; modifiedAt: string | null; pinned: boolean } | null;
+  plans: { component: string; versions: number[] }[];
+  results: { component: string; versions: number[] }[];
 }
 
 export interface StoredComment {

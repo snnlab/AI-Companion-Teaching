@@ -144,6 +144,19 @@ describe("Roster drill-in", () => {
     expect(JSON.parse(String(post!.init!.body))).toMatchObject({ shareHash: "k1", by: "Prof. Kim" });
   });
 
+  it("says so when the send reached no notification device", async () => {
+    mockFetch((url, init) => {
+      if (url === "/api/release" && init?.method === "POST") {
+        return { ok: true, status: 200, json: async () => ({ ok: true, releasedAt: "2026-08-20T10:00:00.000Z", push: { sent: 0, pruned: 1 } }) };
+      }
+      return undefined;
+    });
+    render(<Roster data={roster()} />);
+    fireEvent.click(screen.getByText("Amara"));
+    fireEvent.click(await screen.findByRole("button", { name: "Send feedback to student" }));
+    expect((await screen.findByTestId("no-push-device")).textContent).toContain("they will see it on /me");
+  });
+
   it("labels the button as already-sent when a release marker exists", async () => {
     mockFetch((url) => {
       if (url.startsWith("/api/release")) {

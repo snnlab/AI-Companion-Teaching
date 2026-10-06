@@ -182,8 +182,15 @@ function SendFeedbackButton({
         <p className="mt-1 text-[11px] text-emerald-700 dark:text-emerald-400">
           {state.phase === "sent" ? "Sent" : "Already sent"} · {fmtDate(already)}
           {state.phase === "sent" && state.push && state.push.sent > 0 && (
-            <> · {state.push.sent} notification{state.push.sent === 1 ? "" : "s"} delivered</>
+            <> · notification sent to {state.push.sent} device{state.push.sent === 1 ? "" : "s"}</>
           )}
+        </p>
+      )}
+      {/* The push service accepting a message is all the server can know;
+          zero devices means no notification at all, which is worth saying. */}
+      {state.phase === "sent" && state.push && state.push.sent === 0 && (
+        <p className="mt-1 text-[11px] text-stone-500 dark:text-stone-400" data-testid="no-push-device">
+          No notification device is registered for this student — they will see it on /me.
         </p>
       )}
       {!already && state.phase === "idle" && (
