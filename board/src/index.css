@@ -237,6 +237,63 @@ pre {
 }
 .prose-md.docx .footnotes p { margin: 0.2rem 0; }
 
+/* Manuscript A4 pages (v0.16, components/A4Pages.tsx + lib/pagination.ts).
+   The text sits on one transparent layer; the sheets are drawn behind it.
+   Desk + sheet colours stay readable in both themes. */
+.a4-desk {
+  background: var(--color-stone-200);
+  border-radius: 0.5rem;
+  padding: 1rem;
+}
+html.dark .a4-desk {
+  background: var(--color-stone-950);
+  box-shadow: inset 0 0 0 1px var(--color-stone-800);
+}
+/* clip, not hidden: a hidden box is still a scroll container, and
+   scrollIntoView (outline and page jumps) would scroll it sideways. */
+.a4-stage {
+  position: relative;
+  margin: 0 auto;
+  overflow: clip;
+}
+.a4-paper {
+  position: relative;
+  transform-origin: top left;
+}
+.a4-sheets {
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+}
+.a4-sheet {
+  position: absolute;
+  left: 0;
+  right: 0;
+  background: #fff;
+  box-shadow: 0 1px 3px rgb(0 0 0 / 0.16), 0 0 0 1px rgb(0 0 0 / 0.04);
+  scroll-margin-top: 6rem; /* sticky header clearance, same as headings */
+}
+html.dark .a4-sheet {
+  background: var(--color-stone-900);
+  box-shadow: 0 0 0 1px var(--color-stone-700);
+}
+.a4-folio {
+  position: absolute;
+  left: 0;
+  right: 0;
+  text-align: center;
+  font-size: 0.75rem;
+  color: var(--aict-prose-muted);
+  font-variant-numeric: tabular-nums;
+}
+.a4-flow {
+  position: relative;
+  padding: var(--a4-margin, 96px);
+}
+.a4-flow .prose-md > :first-child {
+  margin-top: 0;
+}
+
 /* Manuscript math: KaTeX MathML output, laid out natively by the browser.
    A math font is named explicitly — the platform fallback for <math> is
    often a plain text face that mis-sizes radicals and big operators. */

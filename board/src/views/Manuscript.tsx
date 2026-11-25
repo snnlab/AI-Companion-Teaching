@@ -1,6 +1,8 @@
-import { useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import Markdown from "../components/Markdown";
 import DocxHtml from "../components/DocxHtml";
+import A4Pages from "../components/A4Pages";
+import type { Layout } from "../lib/pagination";
 import PrintManuscript, { type PrintComment } from "../components/PrintManuscript";
 import { fmtDate } from "../lib/fmtDate";
 import AnnotationLayer, {
@@ -44,12 +46,18 @@ export default function Manuscript({
   const bodyRef = useRef<HTMLElement>(null);
   const [printing, setPrinting] = useState(false);
   const [withComments, setWithComments] = useState(true);
+  const [layout, setLayout] = useState<Layout | null>(null);
+  const [pageCount, setPageCount] = useState(0);
+  const onLayout = useCallback((l: Layout | null) => {
+    setLayout(l);
+    setPageCount(l ? l.pages.length : 0);
+  }, []);
 
   useEffect(() => {
-    onOutline?.(readable ? outlineFromContainer(bodyRef.current) : []);
+    onOutline?.(readable ? outlineFromContainer(bodyRef.current, layout?.pageOf) : []);
     return () => onOutline?.([]);
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [onOutline, readable, manuscript?.content]);
+  }, [onOutline, readable, manuscript?.content, layout]);
 
   useEffect(() => {
     if (!readable) return;
@@ -105,18 +113,20 @@ export default function Manuscript({
   ].join(" · ");
 
   const body = (
-    <section
-      ref={bodyRef}
-      className="max-w-[52rem] rounded-lg border border-stone-200 dark:border-stone-800 bg-white dark:bg-stone-900 p-6"
-      data-annot-scope="manuscript"
-      data-annot-section="manuscript"
-    >
-      {manuscript.format === "docx-html" ? (
-        <DocxHtml html={manuscript.content} assets={manuscript.assets ?? NO_ASSETS} />
-      ) : (
-        <Markdown source={manuscript.content} assets={manuscript.assets ?? NO_ASSETS} math />
-      )}
-    </section>
+    <A4Pages contentKey={`${manuscript.path}\u0000${manuscript.content}`} onLayout={onLayout}>
+      <section
+        ref={bodyRef}
+        className="a4-flow"
+        data-annot-scope="manuscript"
+        data-annot-section="manuscript"
+      >
+        {manuscript.format === "docx-html" ? (
+          <DocxHtml html={manuscript.content} assets={manuscript.assets ?? NO_ASSETS} />
+        ) : (
+          <Markdown source={manuscript.content} assets={manuscript.assets ?? NO_ASSETS} math />
+        )}
+      </section>
+    </A4Pages>
   );
 
   return (
@@ -129,6 +139,15 @@ export default function Manuscript({
           <code>{manuscript.path}</code>
           {manuscript.modifiedAt ? ` · saved ${fmtDate(manuscript.modifiedAt)}` : ""}
         </span>
+        {pageCount > 0 && (
+          <span
+            className="rounded-full border border-stone-300 dark:border-stone-600 px-2 py-0.5 tabular-nums"
+            data-testid="manuscript-pages"
+            title="Pages laid out by the board: A4, 1-inch margins. Page numbers can differ from the student's Word file."
+          >
+            A4 · {pageCount} {pageCount === 1 ? "page" : "pages"}
+          </span>
+        )}
         {printComments.length > 0 && (
           <label className="flex cursor-pointer items-center gap-1.5">
             <input

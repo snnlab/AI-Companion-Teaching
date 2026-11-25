@@ -181,7 +181,16 @@ export default function Sidebar({
                     style={{ paddingLeft: `${0.5 + (e.level - 1) * 0.75}rem` }}
                     onClick={e.onSelect}
                   >
-                    {e.label}
+                    {e.page === undefined ? (
+                      e.label
+                    ) : (
+                      <span className="flex items-baseline gap-2">
+                        <span className="min-w-0 flex-1">{e.label}</span>
+                        <span className="shrink-0 tabular-nums text-stone-400 dark:text-stone-500" aria-label={`page ${e.page}`}>
+                          {e.page}
+                        </span>
+                      </span>
+                    )}
                   </button>
                 </li>
               );

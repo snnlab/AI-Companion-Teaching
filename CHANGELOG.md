@@ -1,5 +1,32 @@
 # Changelog
 
+## [0.16.0] - 2026-11-25
+
+**Instructors: redeploy the classroom server** (regenerate `index.html` and
+`me-board.html` from the new board, then `--deploy`). Nothing in `api/` or
+`lib/` changed, and submissions need no change: pages are drawn from the
+manuscript already stored, so past submissions get pages too.
+
+### Added
+- **The Manuscript tab shows the paper as A4 pages.** The board lays the
+  manuscript out on A4 sheets with 1-inch margins, puts the page number at
+  the foot of each sheet, and shows the page count above the paper
+  ("A4 · 9 pages"). Markdown and Word manuscripts use the same layout.
+  - **Page navigation:** a page box at the bottom right shows the current
+    page, with previous/next buttons and a field to jump to a page.
+  - **Outline page numbers:** each heading in the Outline shows its page.
+  - **Same pages on every screen:** a narrow window scales the paper down
+    instead of re-wrapping it, so the instructor and the student see the
+    same page breaks.
+  - These are the board's own pages, not the page numbers of the student's
+    Word file, which the board cannot see (fonts, margins and spacing are
+    not carried over). The page count's tooltip says so.
+  - Paragraphs, list items, headings and tables move to the next page
+    whole; a heading stays with the start of the text after it. A block
+    taller than a page (a long table) makes that page longer. The text is
+    still one continuous document, so comments are anchored and painted
+    exactly as before, and **Print / Save as PDF** is unchanged.
+
 ## [0.15.3] - 2026-10-06
 
 **Instructors: redeploy the classroom server** (refresh `api/` from

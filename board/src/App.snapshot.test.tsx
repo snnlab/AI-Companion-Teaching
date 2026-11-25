@@ -8,6 +8,10 @@ import StudentHistoryApp, { ME_TOKEN_KEY } from "./StudentHistoryApp";
 import type { Annotation, BoardData, StoredComment } from "./lib/types";
 import { targetHash } from "./lib/hostedComments";
 
+// jsdom has no scrollIntoView; clicking a comment mark scrolls to it a few
+// frames later, which can land after a test ends (same stub as App.route.test).
+Element.prototype.scrollIntoView = vi.fn();
+
 afterEach(() => {
   cleanup();
   vi.unstubAllGlobals();
